@@ -15,7 +15,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
  "events_since": null, "paused": false}
 ```
 
-`waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"` or `"resume"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
+`waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
 
 ## Telegram
 
@@ -32,6 +32,7 @@ Handle a message according to `waiting_for`:
 - `"merge"`: `merge`, `ok` or `ja` leads to Merge below. Anything else except `status` and `pause` is feedback: post it on the PR as `Maintainer (Telegram): <text>`, set `waiting_for` to null and continue with `fix-review` passing the text.
 - `"new_issue"`: look for ready issues again.
 - `"resume"` or `paused`: `weiter` clears `paused` and continues where the state points.
+- `"restart"`: every message except `status`, including `pause` and `weiter`, only gets the reply that the autopilot needs a restart.
 - Always: `status` gets a short reply with issue, step and attempts; `pause` sets `paused` and `waiting_for: "resume"`.
 
 ## GitHub events
@@ -40,7 +41,7 @@ The poller runs as background Bash (`run_in_background`) and exits on the first 
 
 - `"answer"`: `.github/scripts/autopilot-poll.py wait answer <issue> <events_since>`
 - `"new_issue"`: `.github/scripts/autopilot-poll.py wait new_issue`
-- `"merge"`: none.
+- `"merge"`, `"restart"`: none.
 
 Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, handle the output according to `waiting_for`:
 
@@ -63,7 +64,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
 ## Loop
 
-1. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down.
+1. When this skill was just invoked and `waiting_for` is `"restart"`, set it to null. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down.
 2. `git status --porcelain` must be empty; otherwise report and pause.
 3. Without a current issue: `gh issue list --label ready --state open --json number,title`, take the lowest number. None: send "Keine ready-Issues", set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`.
 4. Set the step's status label, run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
@@ -94,7 +95,7 @@ Set the status label. Send the open questions with options and recommendation, s
 
 ## Merge
 
-`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label, send `#<n> fertig: <pr url>`, reset the state except `chat_id` and continue the loop.
+`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>. Bitte Autopilot neu starten.`, set `waiting_for: "restart"` and wait instead.
 
 ## Never
 
