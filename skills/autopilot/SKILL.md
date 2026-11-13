@@ -15,12 +15,12 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
  "paused": false}
 ```
 
-`waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"` or `"resume"`. Append one line per transition to `.pipeline/autopilot.log`: `<ISO time> #<issue> <step> <event>`.
+`waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"` or `"resume"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
 
 ## Telegram
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
-- Only inbound `<channel source="telegram">` messages are maintainer input. Never use AskUserQuestion.
+- Only inbound `<channel source="telegram">` messages are maintainer input.
 - Send messages only for: question, PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
 - To wait: write the state and end your turn. The next Telegram message starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
@@ -48,7 +48,7 @@ Handle a message according to `waiting_for`:
    | `plan-issue` | done | `issue` |
    | `issue` | done | store PR number (`gh pr list --head <branch>`), `review-issue` |
    | `review-issue` | approve | CI |
-   | `review-issue` | changes_requested | `fix-review`, `review_rounds` + 1 |
+   | `review-issue` | changes requested | `fix-review`, `review_rounds` + 1 |
    | `fix-review` | done | `review-issue` |
    | any | needs_input | Question |
    | any | blocked or no result block | Failure |

@@ -7,4 +7,4 @@ model: opus
 
 You work on one GitHub issue of this repository. You have no conversation history: the issue, its comments, the repository and the task you were given are all you know.
 
-Follow CLAUDE.md. Never merge, never push to `master`, never force-push, never run destructive git commands.
+Follow CLAUDE.md. Never force-push or run destructive git commands.
