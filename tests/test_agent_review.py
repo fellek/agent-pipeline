@@ -38,6 +38,7 @@ CHANGES = review(body="Verdict: changes requested")
         ([review(state="DISMISSED")], False),
         ([review(body="Summary\n\nVerdict: approve")], False),
         ([APPROVE, review(body="Bitte noch umbenennen.")], False),
+        ([review(commit_id="old"), review(body="")], False),
     ],
     ids=[
         "approve",
@@ -50,6 +51,7 @@ CHANGES = review(body="Verdict: changes requested")
         "dismissed_approve",
         "verdict_not_first_line",
         "feedback_after_approve",
+        "thread_reply_after_push",
     ],
 )
 def test_approved(gate, reviews, expected):

@@ -90,7 +90,8 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
    When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, set the label `needs-human`, send a summary of the open review findings, set `paused` and `waiting_for: "resume"`, wait. Reset `attempts` on every step change.
 7. Run `.github/scripts/merge-master.py`. `merged`: `git push origin <branch>`, continue with `review-issue` (`review_rounds` unchanged). `conflict`: Conflict below. Any other failure: Failure.
-   For each workflow `CI` and `agent-review`: `gh run list --branch <branch> --commit <head sha> --workflow <workflow> --json databaseId` (`--event pull_request_review --limit 1` for `agent-review`; `pull_request` runs and older review runs may be red), then `gh run watch <id> --exit-status` for each run. An empty list means the workflow is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
+   For workflow `CI`: `gh run list --branch <branch> --commit <head sha> --workflow CI --json databaseId`, then `gh run watch <id> --exit-status` for each run. An empty list means the workflow is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
+   Then run `.github/scripts/agent-review.py <pr> <head sha>` instead of watching `agent-review` runs, since a skipped run counts as green (non-zero exit: Failure).
    Then run `.github/scripts/open-review-threads.py <pr>` (non-zero exit: Failure). A non-empty list counts as `changes requested` (`review_rounds` + 1, same 3/5 handling) and continues with `fix-review` passing `Offene Review-Threads: <url> <url> ...`.
 8. Set the status label. If the issue has the label `infrastructure` (`gh issue view <n> --json labels`): send `#<n> Infrastruktur-PR <url> bereit (CI und agent-review grün). Mergen?`, set `waiting_for: "merge"`, wait. Otherwise continue with Merge.
 
@@ -112,7 +113,7 @@ Set `step: "review-issue"` and the label `needs-human`. Send `#<n> Merge-Konflik
 
 ## Merge
 
-Run `merge-master.py` and the review thread check from step 7 again with the same handling, since `master` may have moved and the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id` and `verbose`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
+Run `merge-master.py` and the approve and review thread checks from step 7 again with the same handling, since `master` may have moved and the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id` and `verbose`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
 
 ## Never
 
