@@ -49,12 +49,25 @@ Keep at most one poller. When a Telegram message arrives, stop the poller before
 - `"new_issue"`: look for ready issues again.
 - Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
 
+## Status labels
+
+An issue carries exactly one status label. Setting one removes the others (`gh issue edit <n> --add-label <new> --remove-label <old>`). `triage` and `blocked` belong to triage and are never set here.
+
+| Step or event | Label |
+|---|---|
+| `plan-issue`, `issue`, `fix-review` | `in-progress` |
+| `review-issue` | `in-review` |
+| Review approve and CI green | `approved` |
+| Question | `needs-info` |
+| Failure pause | `needs-human` |
+| Merge | none |
+
 ## Loop
 
 1. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down.
 2. `git status --porcelain` must be empty; otherwise report and pause.
-3. Without a current issue: `gh issue list --label ready --state open --json number,title`, take the lowest number. None: send "Keine ready-Issues", set `waiting_for: "new_issue"`, wait. Otherwise move label `ready` to `in-progress`, `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`.
-4. Run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
+3. Without a current issue: `gh issue list --label ready --state open --json number,title`, take the lowest number. None: send "Keine ready-Issues", set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`.
+4. Set the step's status label, run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
 5. After `plan-issue` and `review-issue` the working tree must still be clean; otherwise treat the step as `blocked`.
 6. Transitions:
 
@@ -70,19 +83,19 @@ Keep at most one poller. When a Telegram message arrives, stop the poller before
 
    More than 3 `review_rounds` is a Failure. Reset `attempts` on every step change.
 7. CI: `gh run list --branch <branch> --commit <head sha> --workflow CI --json databaseId`, then `gh run watch <id> --exit-status` for each run. An empty list means CI is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
-8. Ask for merge: label `awaiting-merge`, send `#<n> PR <url> bereit (Review approve, CI grün). Mergen?`, set `waiting_for: "merge"`, wait.
+8. Ask for merge: set the status label, send `#<n> PR <url> bereit (Review approve, CI grün). Mergen?`, set `waiting_for: "merge"`, wait.
 
 ## Question
 
-Label `needs-input`. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, wait.
+Set the status label. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, wait.
 
 ## Failure
 
-`attempts` + 1. Below 3: rerun the step. Otherwise: label `blocked`, send step and summary, set `paused` and `waiting_for: "resume"`, wait.
+`attempts` + 1. Below 3: rerun the step. Otherwise: set the status label, send step and summary, set `paused` and `waiting_for: "resume"`, wait.
 
 ## Merge
 
-`gh pr merge <pr> --squash`, `git switch master && git pull --ff-only`. Remove the label `awaiting-merge`, send `#<n> fertig`, reset the state except `chat_id` and continue the loop.
+`gh pr merge <pr> --squash`, `git switch master && git pull --ff-only`. Remove the status label, send `#<n> fertig`, reset the state except `chat_id` and continue the loop.
 
 ## Never
 
