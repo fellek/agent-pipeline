@@ -21,7 +21,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
-- Send messages only for: question, PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
+- Send messages only for: question, review round info, PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
 - To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
@@ -81,7 +81,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
    | any | needs_input | Question |
    | any | blocked or no result block | Failure |
 
-   More than 3 `review_rounds` is a Failure. Reset `attempts` on every step change.
+   When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, set the label `needs-human`, send a summary of the open review findings, set `paused` and `waiting_for: "resume"`, wait. Reset `attempts` on every step change.
 7. CI: `gh run list --branch <branch> --commit <head sha> --workflow CI --json databaseId`, then `gh run watch <id> --exit-status` for each run. An empty list means CI is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
 8. Ask for merge: set the status label, send `#<n> PR <url> bereit (Review approve, CI grün). Mergen?`, set `waiting_for: "merge"`, wait.
 
