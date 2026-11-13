@@ -25,4 +25,4 @@ claude plugin list | grep -q telegram || fail "Telegram plugin is not installed"
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"
 
 mkdir -p .pipeline
-tmux new-session -d -s "$session" -c "$PWD" claude --channels "$channel" /autopilot
+tmux new-session -d -s "$session" -c "$PWD" claude --channels "$channel" -- /autopilot
