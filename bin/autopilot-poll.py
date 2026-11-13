@@ -4,7 +4,7 @@
 Usage:
   autopilot-poll.py now
   autopilot-poll.py wait answer <issue> <since>
-  autopilot-poll.py wait new_issue
+  autopilot-poll.py wait new_issue <label>
   autopilot-poll.py wait patch <branch> <head-sha>
 """
 
@@ -13,9 +13,11 @@ import subprocess
 import sys
 import time
 from email.utils import parsedate_to_datetime
+from urllib.parse import quote
 
 INTERVAL_SECONDS = 60
 MAX_FAILED_POLLS = 3
+SKIPPED_LABELS = {"blocked", "needs-info", "needs-human"}
 
 
 def gh_api(*args):
@@ -51,11 +53,12 @@ def owner_events(items, number, since):
     ]
 
 
-def ready_issues(issues):
+def labeled_issues(issues):
     return [
-        {"type": "ready_issue", "number": i["number"], "title": i["title"]}
+        {"type": "labeled_issue", "number": i["number"], "title": i["title"]}
         for i in issues
         if "pull_request" not in i
+        and not SKIPPED_LABELS & {label["name"] for label in i["labels"]}
     ]
 
 
@@ -74,7 +77,9 @@ def new_commit(branch, head):
 
 def poll(mode, *args):
     if mode == "new_issue":
-        return ready_issues(gh("repos/{owner}/{repo}/issues?state=open&labels=ready"))
+        (label,) = args
+        path = f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}"
+        return labeled_issues(gh(path))
     if mode == "patch":
         return new_commit(*args)
     number, since = args
@@ -106,8 +111,8 @@ def main(argv):
     match argv:
         case ["now"]:
             print(github_now())
-        case ["wait", "new_issue"]:
-            wait("new_issue")
+        case ["wait", "new_issue", label]:
+            wait("new_issue", label)
         case ["wait", "answer", number, since]:
             wait("answer", int(number), since)
         case ["wait", "patch", branch, head]:

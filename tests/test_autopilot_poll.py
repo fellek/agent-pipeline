@@ -84,17 +84,31 @@ def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     assert [e["number"] for e in events(capsys)] == [55]
 
 
-def test_ready_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
-    issue = {"number": 60, "title": "Neu"}
-    calls = fake_gh(monkeypatch, poll, [issue, {**issue, "pull_request": {}}], [])
+def issue(number, *labels):
+    return {"number": number, "title": "Neu", "labels": [{"name": n} for n in labels]}
 
-    poll.wait("new_issue", sleep=no_sleep)
+
+def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
+    calls = fake_gh(
+        monkeypatch, poll, [issue(60), {**issue(61), "pull_request": {}}], []
+    )
+
+    poll.wait("new_issue", "batch-1", sleep=no_sleep)
     answer_events = poll.poll("answer", 48, SINCE)
 
-    assert events(capsys) == [{"type": "ready_issue", "number": 60, "title": "Neu"}]
-    assert "labels=ready" in calls[0]
+    assert events(capsys) == [{"type": "labeled_issue", "number": 60, "title": "Neu"}]
+    assert "labels=batch-1" in calls[0]
     assert answer_events == []
-    assert "labels=ready" not in calls[1]
+    assert "labels=" not in calls[1]
+
+
+@pytest.mark.parametrize("label", ["blocked", "needs-info", "needs-human"])
+def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
+    fake_gh(monkeypatch, poll, [issue(60, "batch-1", label)], [issue(61, "batch-1")])
+
+    poll.wait("new_issue", "batch-1", sleep=no_sleep)
+
+    assert [e["number"] for e in events(capsys)] == [61]
 
 
 def test_keeps_polling_without_events(monkeypatch, capsys, poll):
@@ -161,7 +175,7 @@ def test_github_now_fails_without_date_header(monkeypatch, poll):
     ("argv", "expected"),
     [
         (["wait", "answer", "48", SINCE], ("answer", 48, SINCE)),
-        (["wait", "new_issue"], ("new_issue",)),
+        (["wait", "new_issue", "batch-1"], ("new_issue", "batch-1")),
         (["wait", "patch", "issue-71-x", "abc"], ("patch", "issue-71-x", "abc")),
     ],
 )
@@ -178,7 +192,8 @@ def test_main_dispatches_wait(monkeypatch, poll, argv, expected):
     "argv",
     [
         [],
-        ["wait", "new_issue", SINCE],
+        ["wait", "new_issue"],
+        ["wait", "new_issue", "batch-1", SINCE],
         ["wait", "answer", "48"],
         ["wait", "merge", "56", SINCE],
         ["wait", "patch", "issue-71-x"],

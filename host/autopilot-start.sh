@@ -5,12 +5,15 @@ cd "$(dirname "$0")/../.."
 session=autopilot
 channel=plugin:telegram@claude-plugins-official
 min_claude=2.1.80
+label=${1:-ready}
 
 if tmux has-session -t "$session" 2>/dev/null; then
   exec .github/scripts/autopilot-status.sh
 fi
 
 fail() { echo "autopilot: $*, see docs/autopilot.md" >&2; exit 1; }
+
+[ $# -le 1 ] && [[ $label =~ ^[^[:space:]]+$ ]] || fail "label must not contain whitespace"
 
 for cmd in claude git gh tmux bun uv; do
   command -v "$cmd" >/dev/null || fail "$cmd is missing"
@@ -25,4 +28,4 @@ claude plugin list | grep -q telegram || fail "Telegram plugin is not installed"
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"
 
 mkdir -p .pipeline
-tmux new-session -d -s "$session" -c "$PWD" claude --channels "$channel" -- /autopilot
+tmux new-session -d -s "$session" -c "$PWD" claude --channels "$channel" -- "/autopilot $label"
