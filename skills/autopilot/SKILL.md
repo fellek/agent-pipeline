@@ -81,12 +81,14 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
    | `review-issue` | approve | CI |
    | `review-issue` | changes requested | `fix-review`, `review_rounds` + 1 |
    | `fix-review` | done | `review-issue` |
+   | step 7 | open review threads | `fix-review`, `review_rounds` + 1 |
    | any | needs_input with `PATCH` | Patch |
    | any | needs_input | Question |
    | any | blocked or no result block | Failure |
 
    When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, set the label `needs-human`, send a summary of the open review findings, set `paused` and `waiting_for: "resume"`, wait. Reset `attempts` on every step change.
 7. For each workflow `CI` and `agent-review`: `gh run list --branch <branch> --commit <head sha> --workflow <workflow> --json databaseId` (`--event pull_request_review --limit 1` for `agent-review`; `pull_request` runs and older review runs may be red), then `gh run watch <id> --exit-status` for each run. An empty list means the workflow is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
+   Then run `.github/scripts/open-review-threads.py <pr>` (non-zero exit: Failure). A non-empty list counts as `changes requested` (`review_rounds` + 1, same 3/5 handling) and continues with `fix-review` passing `Offene Review-Threads: <url> <url> ...`.
 8. Set the status label. If the issue has the label `infrastructure` (`gh issue view <n> --json labels`): send `#<n> Infrastruktur-PR <url> bereit (CI und agent-review grün). Mergen?`, set `waiting_for: "merge"`, wait. Otherwise continue with Merge.
 
 ## Question
@@ -103,7 +105,7 @@ Set the status label. Send `#<n> Blockierte Änderung als Patch: <comment url>. 
 
 ## Merge
 
-`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>. Bitte Autopilot neu starten.`, set `waiting_for: "restart"` and wait instead.
+Run the review thread check from step 7 again with the same handling, since the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>. Bitte Autopilot neu starten.`, set `waiting_for: "restart"` and wait instead.
 
 ## Never
 
