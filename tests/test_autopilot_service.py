@@ -2,12 +2,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS
-
-
-def write_executable(path, body):
-    path.write_text(f"#!/usr/bin/env bash\n{body}\n")
-    path.chmod(0o755)
+from conftest import SCRIPTS, write_executable
 
 
 @pytest.fixture

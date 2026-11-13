@@ -112,7 +112,7 @@ Set `step: "review-issue"` and the label `needs-human`. Send `#<n> Merge-Konflik
 
 ## Merge
 
-Run `merge-master.py` and the review thread check from step 7 again with the same handling, since `master` may have moved and the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>. Bitte Autopilot neu starten.`, set `waiting_for: "restart"` and wait instead.
+Run `merge-master.py` and the review thread check from step 7 again with the same handling, since `master` may have moved and the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
 
 ## Never
 
