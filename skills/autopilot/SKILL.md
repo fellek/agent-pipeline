@@ -12,16 +12,16 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 ```json
 {"chat_id": null, "issue": null, "branch": null, "pr": null, "step": null,
  "attempts": 0, "review_rounds": 0, "waiting_for": null, "question": null,
- "events_since": null, "paused": false}
+ "events_since": null, "paused": false, "verbose": false}
 ```
 
-`waiting_for` is `null`, `"answer"`, `"patch"`, `"merge"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
+`waiting_for` is `null`, `"answer"`, `"patch"`, `"merge"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`. If `verbose` is set (missing counts as false), also send each line without the date.
 
 ## Telegram
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
-- Send messages only for: question, blocked change patch, review round info, infrastructure PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
+- Send messages only for: question, blocked change patch, review round info, infrastructure PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps except the `verbose` log lines.
 - To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` (for `"patch"`: `git rev-parse HEAD`) and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
@@ -33,8 +33,8 @@ Handle a message according to `waiting_for`:
 - `"merge"`: `merge`, `ok` or `ja` leads to Merge below. Anything else except `status` and `pause` is feedback: post it on the PR as `Maintainer (Telegram): <text>`, set `waiting_for` to null and continue with `fix-review` passing the text.
 - `"new_issue"`: look for ready issues again.
 - `"resume"` or `paused`: `weiter` clears `paused`, runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict) and continues where the state points.
-- `"restart"`: every message except `status`, including `pause` and `weiter`, only gets the reply that the autopilot needs a restart.
-- Always: `status` gets a short reply with issue, step and attempts; `pause` sets `paused` and `waiting_for: "resume"`.
+- `"restart"`: every message except `status` and `/verbose`, including `pause` and `weiter`, only gets the reply that the autopilot needs a restart.
+- Always: `status` gets a short reply with issue, step and attempts; `pause` sets `paused` and `waiting_for: "resume"`; `/verbose` toggles `verbose`, replies `Verbose an` or `Verbose aus` and leaves `waiting_for` and the poller untouched; it is never an answer or feedback.
 
 ## GitHub events
 
@@ -112,7 +112,7 @@ Set `step: "review-issue"` and the label `needs-human`. Send `#<n> Merge-Konflik
 
 ## Merge
 
-Run `merge-master.py` and the review thread check from step 7 again with the same handling, since `master` may have moved and the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
+Run `merge-master.py` and the review thread check from step 7 again with the same handling, since `master` may have moved and the maintainer may have commented while waiting. Then `gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Remove the status label and reset the state except `chat_id` and `verbose`. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
 
 ## Never
 
