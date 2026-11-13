@@ -1,9 +1,14 @@
 ---
 description: Post an implementation plan for a GitHub issue without changing code
-argument-hint: <issue-number>
+argument-hint: <issue-number> [maintainer-answer]
+context: fork
+agent: reviewer
+background: false
 ---
 
-Plan the implementation of issue #$ARGUMENTS. Do not change any files.
+Plan the implementation of issue #$0. Do not change any files.
+
+Maintainer answer to an earlier open question (empty if none): $1
 
 1. Read the issue and all its comments.
 2. Read the affected code.
@@ -12,5 +17,5 @@ Plan the implementation of issue #$ARGUMENTS. Do not change any files.
    - affected files
    - tests to add or change
    - for architecture decisions: 2 to 3 options with pros and cons and a recommendation
-   - open questions
-4. Stop and wait for an answer on the issue.
+   - open questions, handled as described in CLAUDE.md under "Autopilot operation"
+4. End with the result block from CLAUDE.md: `needs_input` if a question for the maintainer remains, otherwise `done`.
