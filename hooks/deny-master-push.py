@@ -25,7 +25,7 @@ PREFIX_COMMANDS = {"env", "command", "time", "nohup", "sudo"}
 def tokenize(command):
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace = " \t\r"
-    lexer.wordchars += ":+"
+    lexer.wordchars += ":+@"
     return list(lexer)
 
 
@@ -53,7 +53,7 @@ def current_branch(cwd):
 def destination(refspec, cwd):
     source, _, target = refspec.lstrip("+").partition(":")
     target = target or source
-    if target == "HEAD":
+    if target in ("HEAD", "@"):
         target = current_branch(cwd)
     return target.removeprefix("refs/heads/")
 

@@ -41,6 +41,8 @@ def master_repo(tmp_path):
         "FOO=1 /usr/bin/git push origin master",
         "git push --mirror origin",
         "git push origin HEAD",
+        "git push origin @",
+        "git push origin +@",
         "git push 'unclosed",
         "git push origin :",
         "git push origin +:",
@@ -61,6 +63,7 @@ def test_push_to_master_is_blocked(hook, master_repo, command):
     [
         "git -C /p push -u origin issue-64-x",
         "git push origin HEAD",
+        "git push origin @",
         "git push",
         "git log master",
         "git -C /p status",
@@ -73,6 +76,10 @@ def test_push_to_master_is_blocked(hook, master_repo, command):
 )
 def test_other_commands_are_allowed(hook, issue_repo, command):
     assert not hook.is_blocked(command, issue_repo)
+
+
+def test_at_source_to_other_branch_on_master_is_allowed(hook, master_repo):
+    assert not hook.is_blocked("git push origin @:refs/heads/issue-64-x", master_repo)
 
 
 def test_bare_push_on_master_is_blocked(hook, master_repo, issue_repo):
