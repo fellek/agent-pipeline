@@ -84,31 +84,6 @@ def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     assert [e["number"] for e in events(capsys)] == [55]
 
 
-def test_merge_mode_reports_owner_reviews_and_review_comments(
-    monkeypatch, capsys, poll
-):
-    review_comment = {**comment(), "html_url": "rc"}
-    review = {**comment(), "html_url": "rv", "submitted_at": "2026-11-13T10:00:02Z"}
-    pending_review = {**review, "submitted_at": None}
-    old_review = {**review, "submitted_at": SINCE}
-    calls = fake_gh(
-        monkeypatch,
-        poll,
-        [],
-        [review_comment, comment(association="CONTRIBUTOR")],
-        [review, pending_review, old_review],
-    )
-
-    poll.wait("merge", 56, SINCE, sleep=no_sleep)
-
-    assert [(e["url"], e["created_at"]) for e in events(capsys)] == [
-        ("rc", "2026-11-13T10:00:01Z"),
-        ("rv", "2026-11-13T10:00:02Z"),
-    ]
-    assert calls[1].startswith("repos/{owner}/{repo}/pulls/56/comments?")
-    assert calls[2].startswith("repos/{owner}/{repo}/pulls/56/reviews?")
-
-
 def test_ready_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
     issue = {"number": 60, "title": "Neu"}
     calls = fake_gh(monkeypatch, poll, [issue, {**issue, "pull_request": {}}], [])
@@ -169,7 +144,6 @@ def test_github_now_fails_without_date_header(monkeypatch, poll):
     ("argv", "expected"),
     [
         (["wait", "answer", "48", SINCE], ("answer", 48, SINCE)),
-        (["wait", "merge", "56", SINCE], ("merge", 56, SINCE)),
         (["wait", "new_issue"], ("new_issue", None, None)),
     ],
 )
@@ -183,7 +157,13 @@ def test_main_dispatches_wait(monkeypatch, poll, argv, expected):
 
 
 @pytest.mark.parametrize(
-    "argv", [[], ["wait", "new_issue", SINCE], ["wait", "answer", "48"]]
+    "argv",
+    [
+        [],
+        ["wait", "new_issue", SINCE],
+        ["wait", "answer", "48"],
+        ["wait", "merge", "56", SINCE],
+    ],
 )
 def test_main_rejects_invalid_arguments(poll, argv):
     with pytest.raises(SystemExit):

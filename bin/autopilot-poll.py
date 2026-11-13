@@ -3,7 +3,7 @@
 
 Usage:
   autopilot-poll.py now
-  autopilot-poll.py wait <answer|merge> <issue-or-pr> <since>
+  autopilot-poll.py wait answer <issue> <since>
   autopilot-poll.py wait new_issue
 """
 
@@ -36,17 +36,17 @@ def github_now():
     raise RuntimeError("GitHub response has no Date header")
 
 
-def owner_events(items, number, since, timestamp="created_at"):
+def owner_events(items, number, since):
     return [
         {
             "type": "comment",
             "number": number,
             "url": item["html_url"],
-            "created_at": item[timestamp],
+            "created_at": item["created_at"],
             "body": item["body"],
         }
         for item in items
-        if item["author_association"] == "OWNER" and (item.get(timestamp) or "") > since
+        if item["author_association"] == "OWNER" and item["created_at"] > since
     ]
 
 
@@ -64,14 +64,7 @@ def poll(mode, number, since):
     repo = "repos/{owner}/{repo}"
     comments = gh(f"{repo}/issues/comments?since={since}&per_page=100")
     on_number = [c for c in comments if c["issue_url"].endswith(f"/issues/{number}")]
-    events = owner_events(on_number, number, since)
-    if mode == "merge":
-        pull = f"{repo}/pulls/{number}"
-        review_comments = gh(f"{pull}/comments?since={since}&per_page=100")
-        reviews = gh(f"{pull}/reviews?per_page=100")
-        events += owner_events(review_comments, number, since)
-        events += owner_events(reviews, number, since, "submitted_at")
-    return events
+    return owner_events(on_number, number, since)
 
 
 def wait(mode, number, since, sleep=time.sleep):
@@ -98,8 +91,8 @@ def main(argv):
             print(github_now())
         case ["wait", "new_issue"]:
             wait("new_issue", None, None)
-        case ["wait", ("answer" | "merge") as mode, number, since]:
-            wait(mode, int(number), since)
+        case ["wait", "answer", number, since]:
+            wait("answer", int(number), since)
         case _:
             sys.exit(__doc__)
 
