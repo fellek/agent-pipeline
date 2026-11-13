@@ -13,10 +13,10 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 {"chat_id": null, "issue": null, "branch": null, "pr": null, "step": null,
  "attempts": 0, "review_rounds": 0, "waiting_for": null, "question": null,
  "events_since": null, "paused": false, "verbose": false, "verbose_before": null,
- "label": "ready"}
+ "label": "ready", "attempts_per_step": {}, "questions": 0}
 ```
 
-`label` is the selection label for step 3.
+`label` is the selection label for step 3. `attempts_per_step` and `questions` feed the metrics line; missing fields count as `{}` and `0`.
 
 `waiting_for` is `null`, `"answer"`, `"patch"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`. If `verbose` is set (missing counts as false), also send each line without the date.
 
@@ -72,7 +72,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 1. When this skill was just invoked, set `label` to its argument (empty: `ready`), and if `waiting_for` is `"restart"`, set it to null. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down.
 2. `git status --porcelain` must be empty; otherwise report and pause.
 3. Without a current issue: `gh issue list --label <label> --state open --limit 1000 --json number,title,labels`, skip issues labeled `blocked`, `needs-info` or `needs-human`, take the lowest number. None: send `Keine Issues mit Label <label>`, set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`. If the issue has the label `infrastructure`, set `verbose_before` to `verbose` and `verbose` to true, so the maintainer follows a change to the pipeline itself.
-4. Set the step's status label, run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
+4. Set the step's status label, raise `attempts_per_step[<step>]` by 1, run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
 5. After `plan-issue` and `review-issue` the working tree must still be clean; otherwise treat the step as `blocked`.
 6. Transitions:
 
@@ -99,7 +99,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
 ## Question
 
-Set the status label. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, wait.
+`questions` + 1. Set the status label. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, wait.
 
 ## Patch
 
@@ -115,7 +115,7 @@ Set `step: "review-issue"` and the label `needs-human`. Send `#<n> Merge-Konflik
 
 ## Merge
 
-`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. If `gh issue view <n> --json state` is still `OPEN`, run `gh issue close <n>`; GitHub closes it via `Closes #<n>` asynchronously, and step 3 would otherwise pick it again by its selection label. Remove the status label and reset the state except `chat_id`, `verbose` and `label`; if `verbose_before` is not null, restore `verbose` from it. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
+`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Run `.github/scripts/pipeline-metrics.py record`; if it fails, send `#<n> Kennzahlen nicht erfasst: <error>` and go on, since the merge has already happened. If `gh issue view <n> --json state` is still `OPEN`, run `gh issue close <n>`; GitHub closes it via `Closes #<n>` asynchronously, and step 3 would otherwise pick it again by its selection label. Remove the status label and reset the state except `chat_id`, `verbose` and `label`; if `verbose_before` is not null, restore `verbose` from it. Then send `#<n> fertig: <pr url>` and continue the loop; for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
 
 ## Never
 
