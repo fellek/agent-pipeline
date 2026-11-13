@@ -15,20 +15,21 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
  "events_since": null, "paused": false}
 ```
 
-`waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
+`waiting_for` is `null`, `"answer"`, `"patch"`, `"merge"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
 
 ## Telegram
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
-- Send messages only for: question, review round info, infrastructure PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
-- To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
+- Send messages only for: question, blocked change patch, review round info, infrastructure PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
+- To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` (for `"patch"`: `git rev-parse HEAD`) and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
 
 Handle a message according to `waiting_for`:
 
 - `"answer"`: post it on the issue as `Antwort des Maintainers (Telegram): <text>`, set `waiting_for` to null, `attempts` to 0 and rerun `step` with the answer as second argument.
+- `"patch"`: as for `"answer"`, after `git pull --ff-only origin <branch>`.
 - `"merge"`: `merge`, `ok` or `ja` leads to Merge below. Anything else except `status` and `pause` is feedback: post it on the PR as `Maintainer (Telegram): <text>`, set `waiting_for` to null and continue with `fix-review` passing the text.
 - `"new_issue"`: look for ready issues again.
 - `"resume"` or `paused`: `weiter` clears `paused` and continues where the state points.
@@ -41,12 +42,14 @@ The poller runs as background Bash (`run_in_background`) and exits on the first 
 
 - `"answer"`: `.github/scripts/autopilot-poll.py wait answer <issue> <events_since>`
 - `"new_issue"`: `.github/scripts/autopilot-poll.py wait new_issue`
+- `"patch"`: `.github/scripts/autopilot-poll.py wait patch <branch> <events_since>`
 - `"merge"`, `"restart"`: none.
 
 Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, handle the output according to `waiting_for`:
 
 - `"answer"`: the comment bodies are the answer. Do not mirror them; continue as for a Telegram answer.
 - `"new_issue"`: look for ready issues again.
+- `"patch"`: `git pull --ff-only origin <branch>`, set `waiting_for` to null, `attempts` to 0 and rerun `step` with the answer `Der Maintainer hat den Patch committet.`
 - Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
 
 ## Status labels
@@ -58,7 +61,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 | `plan-issue`, `issue`, `fix-review` | `in-progress` |
 | `review-issue` | `in-review` |
 | Step 7 passed | `approved` |
-| Question | `needs-info` |
+| Question, Patch | `needs-info` |
 | Failure pause | `needs-human` |
 | Merge | none |
 
@@ -78,6 +81,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
    | `review-issue` | approve | CI |
    | `review-issue` | changes requested | `fix-review`, `review_rounds` + 1 |
    | `fix-review` | done | `review-issue` |
+   | any | needs_input with `PATCH` | Patch |
    | any | needs_input | Question |
    | any | blocked or no result block | Failure |
 
@@ -88,6 +92,10 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 ## Question
 
 Set the status label. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, wait.
+
+## Patch
+
+Set the status label. Send `#<n> Blockierte Änderung als Patch: <comment url>. Bitte auf <branch> committen und pushen.`, set `waiting_for: "patch"`, wait.
 
 ## Failure
 

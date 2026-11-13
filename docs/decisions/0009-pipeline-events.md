@@ -4,13 +4,13 @@ Status: angenommen
 
 ## Entscheidung
 
-Der Orchestrator startet beim Warten [`autopilot-poll.py`](../../.github/scripts/autopilot-poll.py) als Hintergrund-Bash. Das Skript fragt alle 60 s per `gh api` Issue-Kommentare seit dem Cursor `events_since` ab, im Wartezustand `new_issue` stattdessen offene Issues mit `ready`. Beim ersten Treffer gibt es ihn als JSON-Zeilen aus und endet; das Ende startet einen neuen Turn der Session. Es zählen nur Kommentare mit `author_association == OWNER` auf dem aktuellen Issue. Behandlung siehe [Orchestrator](../../.claude/skills/autopilot/SKILL.md#github-events).
+Der Orchestrator startet beim Warten [`autopilot-poll.py`](../../.github/scripts/autopilot-poll.py) als Hintergrund-Bash. Das Skript fragt alle 60 s per `gh api` Issue-Kommentare seit dem Cursor `events_since` ab, im Wartezustand `new_issue` stattdessen offene Issues mit `ready`. Im Wartezustand `patch` vergleicht es den Head des Issue-Branches mit dem Commit im Cursor. Beim ersten Treffer gibt es ihn als JSON-Zeilen aus und endet; das Ende startet einen neuen Turn der Session. Es zählen nur Kommentare mit `author_association == OWNER` auf dem aktuellen Issue. Behandlung siehe [Orchestrator](../../.claude/skills/autopilot/SKILL.md#github-events).
 
 ## Begründung
 
 - Kein eingehender Port, kein Tunnel, kein zusätzlicher Dienst im LXC.
 - Im Leerlauf laufen nur `gh`-Aufrufe, keine Modell-Turns.
-- Der Cursor ist die GitHub-Serverzeit beim Beginn des Wartens und steht in `.pipeline/state.json`. Er überlebt einen Neustart, und eigene Kommentare des Autopiloten (gleicher Account) liegen immer davor.
+- Beim Warten auf Kommentare ist der Cursor die GitHub-Serverzeit beim Beginn des Wartens und steht in `.pipeline/state.json`. Er überlebt einen Neustart, und eigene Kommentare des Autopiloten (gleicher Account) liegen immer davor.
 
 ## Bewusst ausgelassen
 

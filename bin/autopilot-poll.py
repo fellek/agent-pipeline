@@ -5,6 +5,7 @@ Usage:
   autopilot-poll.py now
   autopilot-poll.py wait answer <issue> <since>
   autopilot-poll.py wait new_issue
+  autopilot-poll.py wait patch <branch> <head-sha>
 """
 
 import json
@@ -58,20 +59,36 @@ def ready_issues(issues):
     ]
 
 
-def poll(mode, number, since):
+def branch_head(branch):
+    return gh_api(
+        f"repos/{{owner}}/{{repo}}/branches/{branch}", "--jq", ".commit.sha"
+    ).strip()
+
+
+def new_commit(branch, head):
+    current = branch_head(branch)
+    if current == head:
+        return []
+    return [{"type": "commit", "branch": branch, "sha": current}]
+
+
+def poll(mode, *args):
     if mode == "new_issue":
         return ready_issues(gh("repos/{owner}/{repo}/issues?state=open&labels=ready"))
+    if mode == "patch":
+        return new_commit(*args)
+    number, since = args
     repo = "repos/{owner}/{repo}"
     comments = gh(f"{repo}/issues/comments?since={since}&per_page=100")
     on_number = [c for c in comments if c["issue_url"].endswith(f"/issues/{number}")]
     return owner_events(on_number, number, since)
 
 
-def wait(mode, number, since, sleep=time.sleep):
+def wait(mode, *args, sleep=time.sleep):
     failed_polls = 0
     while True:
         try:
-            events = poll(mode, number, since)
+            events = poll(mode, *args)
             failed_polls = 0
         except subprocess.CalledProcessError:
             failed_polls += 1
@@ -90,9 +107,11 @@ def main(argv):
         case ["now"]:
             print(github_now())
         case ["wait", "new_issue"]:
-            wait("new_issue", None, None)
+            wait("new_issue")
         case ["wait", "answer", number, since]:
             wait("answer", int(number), since)
+        case ["wait", "patch", branch, head]:
+            wait("patch", branch, head)
         case _:
             sys.exit(__doc__)
 

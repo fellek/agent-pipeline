@@ -88,7 +88,7 @@ def test_ready_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
     issue = {"number": 60, "title": "Neu"}
     calls = fake_gh(monkeypatch, poll, [issue, {**issue, "pull_request": {}}], [])
 
-    poll.wait("new_issue", None, SINCE, sleep=no_sleep)
+    poll.wait("new_issue", sleep=no_sleep)
     answer_events = poll.poll("answer", 48, SINCE)
 
     assert events(capsys) == [{"type": "ready_issue", "number": 60, "title": "Neu"}]
@@ -106,6 +106,23 @@ def test_keeps_polling_without_events(monkeypatch, capsys, poll):
     assert sleeps == [poll.INTERVAL_SECONDS] * 2
     assert len(calls) == 3
     assert len(events(capsys)) == 1
+
+
+def test_new_commit_on_branch_is_printed(monkeypatch, capsys, poll):
+    heads = ["abc", "abc", "def"]
+    monkeypatch.setattr(poll, "branch_head", lambda branch: heads.pop(0))
+
+    poll.wait("patch", "issue-71-x", "abc", sleep=no_sleep)
+
+    assert events(capsys) == [{"type": "commit", "branch": "issue-71-x", "sha": "def"}]
+
+
+def test_branch_head_reads_commit_sha(monkeypatch, poll):
+    calls = []
+    monkeypatch.setattr(poll, "gh_api", lambda *args: calls.append(args) or "def\n")
+
+    assert poll.branch_head("issue-71-x") == "def"
+    assert calls[0][0] == "repos/{owner}/{repo}/branches/issue-71-x"
 
 
 GH_ERROR = subprocess.CalledProcessError(1, ["gh", "api"])
@@ -144,7 +161,8 @@ def test_github_now_fails_without_date_header(monkeypatch, poll):
     ("argv", "expected"),
     [
         (["wait", "answer", "48", SINCE], ("answer", 48, SINCE)),
-        (["wait", "new_issue"], ("new_issue", None, None)),
+        (["wait", "new_issue"], ("new_issue",)),
+        (["wait", "patch", "issue-71-x", "abc"], ("patch", "issue-71-x", "abc")),
     ],
 )
 def test_main_dispatches_wait(monkeypatch, poll, argv, expected):
@@ -163,6 +181,7 @@ def test_main_dispatches_wait(monkeypatch, poll, argv, expected):
         ["wait", "new_issue", SINCE],
         ["wait", "answer", "48"],
         ["wait", "merge", "56", SINCE],
+        ["wait", "patch", "issue-71-x"],
     ],
 )
 def test_main_rejects_invalid_arguments(poll, argv):
