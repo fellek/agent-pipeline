@@ -5,6 +5,7 @@ import pytest
 from conftest import SCRIPTS, write_executable
 
 IS_ACTIVE = "systemctl --user is-active --quiet autopilot\n"
+RESET_FAILED = "systemctl --user reset-failed autopilot\n"
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def run_restart(tmp_path):
 def test_ends_session_when_service_is_active(run_restart):
     result, calls = run_restart(service_status=0)
     assert result.returncode == 0
-    assert calls == f"{IS_ACTIVE}tmux kill-session -t autopilot\n"
+    assert calls == f"{IS_ACTIVE}{RESET_FAILED}tmux kill-session -t autopilot\n"
 
 
 def test_fails_without_active_service(run_restart):
