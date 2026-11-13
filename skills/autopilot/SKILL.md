@@ -12,7 +12,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 ```json
 {"chat_id": null, "issue": null, "branch": null, "pr": null, "step": null,
  "attempts": 0, "review_rounds": 0, "waiting_for": null, "question": null,
- "paused": false}
+ "events_since": null, "paused": false}
 ```
 
 `waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"` or `"resume"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
@@ -22,7 +22,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
 - Send messages only for: question, PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
-- To wait: write the state and end your turn. The next Telegram message starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
+- To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
 
@@ -34,9 +34,24 @@ Handle a message according to `waiting_for`:
 - `"resume"` or `paused`: `weiter` clears `paused` and continues where the state points.
 - Always: `status` gets a short reply with issue, step and attempts; `pause` sets `paused` and `waiting_for: "resume"`.
 
+## GitHub events
+
+The poller runs as background Bash (`run_in_background`) and exits on the first maintainer event, printing it as JSON lines:
+
+- `"answer"`: `.github/scripts/autopilot-poll.py wait answer <issue> <events_since>`
+- `"merge"`: `.github/scripts/autopilot-poll.py wait merge <pr> <events_since>`
+- `"new_issue"`: `.github/scripts/autopilot-poll.py wait new_issue`
+
+Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, handle the output according to `waiting_for`:
+
+- `"answer"`: the comment bodies are the answer. Do not mirror them; continue as for a Telegram answer.
+- `"merge"`: a comment is feedback, never a merge approval; continue with `fix-review` passing the text.
+- `"new_issue"`: look for ready issues again.
+- Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
+
 ## Loop
 
-1. If `paused` or `waiting_for` is set, wait.
+1. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down.
 2. `git status --porcelain` must be empty; otherwise report and pause.
 3. Without a current issue: `gh issue list --label ready --state open --json number,title`, take the lowest number. None: send "Keine ready-Issues", set `waiting_for: "new_issue"`, wait. Otherwise move label `ready` to `in-progress`, `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`.
 4. Run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
