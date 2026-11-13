@@ -15,13 +15,13 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
  "events_since": null, "paused": false}
 ```
 
-`waiting_for` is `null`, `"answer"`, `"new_issue"` or `"resume"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
+`waiting_for` is `null`, `"answer"`, `"merge"`, `"new_issue"` or `"resume"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`.
 
 ## Telegram
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
-- Send messages only for: question, review round info, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
+- Send messages only for: question, review round info, infrastructure PR ready for merge, issue finished, error/pause, no ready issues. Prefix each with `#<issue>`. No messages for intermediate steps.
 - To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
@@ -29,6 +29,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 Handle a message according to `waiting_for`:
 
 - `"answer"`: post it on the issue as `Antwort des Maintainers (Telegram): <text>`, set `waiting_for` to null, `attempts` to 0 and rerun `step` with the answer as second argument.
+- `"merge"`: `merge`, `ok` or `ja` leads to Merge below. Anything else except `status` and `pause` is feedback: post it on the PR as `Maintainer (Telegram): <text>`, set `waiting_for` to null and continue with `fix-review` passing the text.
 - `"new_issue"`: look for ready issues again.
 - `"resume"` or `paused`: `weiter` clears `paused` and continues where the state points.
 - Always: `status` gets a short reply with issue, step and attempts; `pause` sets `paused` and `waiting_for: "resume"`.
@@ -39,6 +40,7 @@ The poller runs as background Bash (`run_in_background`) and exits on the first 
 
 - `"answer"`: `.github/scripts/autopilot-poll.py wait answer <issue> <events_since>`
 - `"new_issue"`: `.github/scripts/autopilot-poll.py wait new_issue`
+- `"merge"`: none.
 
 Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, handle the output according to `waiting_for`:
 
@@ -80,7 +82,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
    When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, set the label `needs-human`, send a summary of the open review findings, set `paused` and `waiting_for: "resume"`, wait. Reset `attempts` on every step change.
 7. For each workflow `CI` and `agent-review`: `gh run list --branch <branch> --commit <head sha> --workflow <workflow> --json databaseId` (`--event pull_request_review --limit 1` for `agent-review`; `pull_request` runs and older review runs may be red), then `gh run watch <id> --exit-status` for each run. An empty list means the workflow is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
-8. Set the status label and continue with Merge.
+8. Set the status label. If the issue has the label `infrastructure` (`gh issue view <n> --json labels`): send `#<n> Infrastruktur-PR <url> bereit (CI und agent-review grün). Mergen?`, set `waiting_for: "merge"`, wait. Otherwise continue with Merge.
 
 ## Question
 
