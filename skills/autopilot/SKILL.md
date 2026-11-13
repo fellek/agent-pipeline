@@ -69,7 +69,7 @@ Keep at most one poller. When a Telegram message arrives, stop the poller before
    | any | blocked or no result block | Failure |
 
    More than 3 `review_rounds` is a Failure. Reset `attempts` on every step change.
-7. CI: `gh run list --branch <branch> --commit <head sha> --json databaseId`, then `gh run watch <id> --exit-status` for each run. An empty list means CI is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
+7. CI: `gh run list --branch <branch> --commit <head sha> --workflow CI --json databaseId`, then `gh run watch <id> --exit-status` for each run. An empty list means CI is not ready yet: wait 30 s and list again, up to 5 times; still empty: Failure. Non-zero exit: Failure.
 8. Ask for merge: label `awaiting-merge`, send `#<n> PR <url> bereit (Review approve, CI grün). Mergen?`, set `waiting_for: "merge"`, wait.
 
 ## Question
