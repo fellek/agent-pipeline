@@ -4,7 +4,7 @@ Status: angenommen
 
 ## Entscheidung
 
-Der Orchestrator startet beim Warten [`autopilot-poll.py`](../../.github/scripts/autopilot-poll.py) als Hintergrund-Bash. Das Skript fragt alle 60 s per `gh api` Issue-Kommentare seit dem Cursor `events_since` ab, im Wartezustand `new_issue` stattdessen offene Issues mit dem Auswahl-Label. Im Wartezustand `patch` vergleicht es den Head des Issue-Branches mit dem Commit im Cursor. Beim ersten Treffer gibt es ihn als JSON-Zeilen aus und endet; das Ende startet einen neuen Turn der Session. Es zählen nur Kommentare mit `author_association == OWNER` auf dem aktuellen Issue. Behandlung siehe [Orchestrator](../../.claude/skills/autopilot/SKILL.md#github-events).
+Der Orchestrator startet beim Warten genau einen [`autopilot-poll.py`](../../.github/scripts/autopilot-poll.py) als Hintergrund-Bash, der alle Ziele zugleich prüft: offene Issues mit dem Auswahl-Label und je geparktem Issue dessen Antwort oder Patch. Das Skript fragt alle 60 s per `gh api` ab: Issue-Kommentare mit einem Aufruf ab dem kleinsten Cursor, gefiltert nach dem Cursor `events_since` jedes Issues; für einen Patch den Head des Issue-Branches gegen den Commit im Cursor. Beim ersten Treffer gibt es die Events als JSON-Zeilen aus und endet; das Ende startet einen neuen Turn der Session. `check` fragt einmal ohne Warten ab, für Antworten, die kamen, während ein anderes Issue lief. Es zählen nur Kommentare mit `author_association == OWNER` auf geparkten Issues. Behandlung siehe [Orchestrator](../../.claude/skills/autopilot/SKILL.md#github-events).
 
 ## Begründung
 
@@ -20,6 +20,7 @@ Der Orchestrator startet beim Warten [`autopilot-poll.py`](../../.github/scripts
 
 ## Verworfen
 
+- Ein Poller pro geparktem Issue: mehrere Hintergrundprozesse, die alle vor eigenen Kommentaren gestoppt werden müssten.
 - Self-hosted Runner im LXC mit `claude -p`: neue Session pro Event ohne den Zustand der laufenden; Runner als weiterer Dienst.
 - Webhook-Channel als eigener MCP-Server: braucht eine erreichbare URL oder einen Tunnel.
 - Wecken per `CronCreate` oder `/loop`: jeder Lauf ist ein Modell-Turn, auch ohne Event; Ablauf nach 7 Tagen.

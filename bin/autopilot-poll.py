@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Wait for maintainer input on GitHub; print it as JSON lines and exit.
+"""Poll GitHub for maintainer input on one or more targets; print it as JSON lines.
+
+`wait` polls until a target has an event, `check` polls once.
 
 Usage:
   autopilot-poll.py now
-  autopilot-poll.py wait answer <issue> <since>
-  autopilot-poll.py wait new_issue <label>
-  autopilot-poll.py wait patch <branch> <head-sha>
+  autopilot-poll.py wait|check <target>...
+
+Targets:
+  answer <issue> <since>
+  new_issue <label>
+  patch <branch> <head-sha>
 """
 
 import json
@@ -18,6 +23,7 @@ from urllib.parse import quote
 INTERVAL_SECONDS = 60
 MAX_FAILED_POLLS = 3
 SKIPPED_LABELS = {"blocked", "needs-info", "needs-human"}
+TARGET_ARITY = {"answer": 2, "new_issue": 1, "patch": 2}
 
 
 def gh_api(*args):
@@ -75,25 +81,43 @@ def new_commit(branch, head):
     return [{"type": "commit", "branch": branch, "sha": current}]
 
 
-def poll(mode, *args):
-    if mode == "new_issue":
-        (label,) = args
-        path = f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}"
-        return labeled_issues(gh(path))
-    if mode == "patch":
-        return new_commit(*args)
-    number, since = args
-    repo = "repos/{owner}/{repo}"
-    comments = gh(f"{repo}/issues/comments?since={since}&per_page=100")
-    on_number = [c for c in comments if c["issue_url"].endswith(f"/issues/{number}")]
-    return owner_events(on_number, number, since)
+def answers(cursors):
+    since = min(since for _, since in cursors)
+    comments = gh(
+        f"repos/{{owner}}/{{repo}}/issues/comments?since={since}&per_page=100"
+    )
+    events = []
+    for number, since in cursors:
+        on_number = [
+            c for c in comments if c["issue_url"].endswith(f"/issues/{number}")
+        ]
+        events += owner_events(on_number, number, since)
+    return events
 
 
-def wait(mode, *args, sleep=time.sleep):
+def poll(targets):
+    cursors = [args for mode, *args in targets if mode == "answer"]
+    events = answers(cursors) if cursors else []
+    for mode, *args in targets:
+        if mode == "new_issue":
+            (label,) = args
+            path = f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}"
+            events += labeled_issues(gh(path))
+        elif mode == "patch":
+            events += new_commit(*args)
+    return events
+
+
+def print_events(events):
+    for event in events:
+        print(json.dumps(event, ensure_ascii=False))
+
+
+def wait(targets, sleep=time.sleep):
     failed_polls = 0
     while True:
         try:
-            events = poll(mode, *args)
+            events = poll(targets)
             failed_polls = 0
         except subprocess.CalledProcessError:
             failed_polls += 1
@@ -103,20 +127,39 @@ def wait(mode, *args, sleep=time.sleep):
         if events:
             break
         sleep(INTERVAL_SECONDS)
-    for event in events:
-        print(json.dumps(event, ensure_ascii=False))
+    print_events(events)
+
+
+def check(targets):
+    print_events(poll(targets))
+
+
+def parse_targets(args):
+    targets = []
+    while args:
+        mode, *rest = args
+        arity = TARGET_ARITY.get(mode)
+        if arity is None or len(rest) < arity:
+            raise ValueError(args)
+        params, args = rest[:arity], rest[arity:]
+        if mode == "answer":
+            params[0] = int(params[0])
+        targets.append((mode, *params))
+    if not targets:
+        raise ValueError(args)
+    return targets
 
 
 def main(argv):
     match argv:
         case ["now"]:
             print(github_now())
-        case ["wait", "new_issue", label]:
-            wait("new_issue", label)
-        case ["wait", "answer", number, since]:
-            wait("answer", int(number), since)
-        case ["wait", "patch", branch, head]:
-            wait("patch", branch, head)
+        case ["wait" | "check" as command, *args]:
+            try:
+                targets = parse_targets(args)
+            except ValueError:
+                sys.exit(__doc__)
+            {"wait": wait, "check": check}[command](targets)
         case _:
             sys.exit(__doc__)
 

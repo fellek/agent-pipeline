@@ -13,46 +13,38 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 {"chat_id": null, "issue": null, "branch": null, "pr": null, "step": null,
  "attempts": 0, "review_rounds": 0, "waiting_for": null, "question": null,
  "events_since": null, "paused": false, "verbose": false, "verbose_before": null,
- "label": "ready", "attempts_per_step": {}, "questions": 0, "failure": null}
+ "label": "ready", "attempts_per_step": {}, "questions": 0, "failure": null,
+ "parked": []}
 ```
 
 `label` is the selection label for step 3. `attempts_per_step` and `questions` feed the metrics line; missing fields count as `{}` and `0`. `failure` is the cause of the last failed attempt of the current step; missing counts as null.
 
-`waiting_for` is `null`, `"answer"`, `"patch"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`. If `verbose` is set (missing counts as false), also send each line without the date.
+`parked` lists the issues waiting for the maintainer, each `{issue, branch, pr, step, review_rounds, attempts_per_step, questions, waiting_for, events_since, question, answer}`; missing counts as `[]`. A parked entry is waiting while its `answer` is null.
+
+`waiting_for` is `null`, `"new_issue"`, `"resume"` or `"restart"`; in a parked entry `"answer"` or `"patch"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`. If `verbose` is set (missing counts as false), also send each line without the date.
 
 ## Telegram
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
 - Send messages only for: question, blocked change patch, review round info, issue finished, error/pause, no issues with the label. Prefix each with `#<issue>`. No messages for intermediate steps except the `verbose` log lines.
-- To wait: unless `paused`, set `events_since` to the output of `.github/scripts/autopilot-poll.py now` (for `"patch"`: `git rev-parse HEAD`) and start the poller (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
+- To wait: unless `paused`, start the poller if `waiting_for` is `"new_issue"` (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
 
 Handle a message according to `waiting_for`. While `paused`, only `weiter` and the "Always" commands are handled, so a message sent during a pause is never taken as an answer.
 
-- `"answer"`: post it on the issue as `Antwort des Maintainers (Telegram): <text>`, set `waiting_for` and `failure` to null, `attempts` to 0 and rerun `step` with the answer as second argument.
-- `"patch"`: as for `"answer"`, after `git pull --ff-only origin <branch>`.
-- `"new_issue"`: look for issues again.
+- Answer: `#<n> <text>` is the answer for the parked entry of issue n; without the prefix it is for the only waiting parked entry. If several are waiting, reply `Bitte mit #<n> antworten`. Stop the poller, post `<text>` on the issue as `Antwort des Maintainers (Telegram): <text>` and store it in `answer` of the entry. Without a current issue continue with step 3; a current issue is not interrupted.
+- `"new_issue"`, no answer: look for issues again.
 - `paused`: `weiter` clears `paused` and runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict). If `waiting_for` is `"resume"` or null, it sets `waiting_for` to null and continues where the state points. Otherwise a wait is pending: start the poller as in loop step 1 and end your turn.
 - `"restart"`: every message except `status` and `/verbose`, including `pause`, `weiter` and `label`, only gets the reply that the autopilot needs a restart.
-- Always: `status` gets a short reply with issue, step, attempts and `label`; `label <name>` sets `label` and replies `Label <name>`; if `waiting_for` is `"new_issue"` and not `paused`, stop the poller and look for issues again, otherwise leave `waiting_for` and the poller untouched; `pause` stops the poller, sets `paused` and, only if `waiting_for` is null, `waiting_for: "resume"`, so a pending wait and its `events_since` survive the pause; `/verbose` toggles `verbose`, replies `Verbose an` or `Verbose aus` and leaves `waiting_for` and the poller untouched; it is never an answer or feedback.
+- Always: `status` gets a short reply with issue, step, attempts, `label` and the parked issues with their `waiting_for`; `label <name>` sets `label` and replies `Label <name>`; if `waiting_for` is `"new_issue"` and not `paused`, stop the poller and look for issues again, otherwise leave `waiting_for` and the poller untouched; `pause` stops the poller, sets `paused` and, only if `waiting_for` is null, `waiting_for: "resume"`, so a pending wait and its `events_since` survive the pause; `/verbose` toggles `verbose`, replies `Verbose an` or `Verbose aus` and leaves `waiting_for` and the poller untouched; it is never an answer or feedback.
 
 ## GitHub events
 
-The poller runs as background Bash (`run_in_background`) and exits on the first maintainer event, printing it as JSON lines:
+The parked targets are, for each waiting parked entry, `answer <issue> <events_since>` (`waiting_for: "answer"`) or `patch <branch> <events_since>` (`"patch"`). `.github/scripts/autopilot-poll.py check <targets>` polls once; `wait <targets>` polls until one target has an event. Both print the events as JSON lines.
 
-- `"answer"`: `.github/scripts/autopilot-poll.py wait answer <issue> <events_since>`
-- `"new_issue"`: `.github/scripts/autopilot-poll.py wait new_issue <label>`
-- `"patch"`: `.github/scripts/autopilot-poll.py wait patch <branch> <events_since>`
-- `"restart"`: none.
-
-Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, handle the output according to `waiting_for`:
-
-- `"answer"`: the comment bodies are the answer. Do not mirror them; continue as for a Telegram answer.
-- `"new_issue"`: look for issues again.
-- `"patch"`: `git pull --ff-only origin <branch>`, set `waiting_for` and `failure` to null, `attempts` to 0 and rerun `step` with the answer `Der Maintainer hat den Patch committet.`
-- Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
+The poller is `.github/scripts/autopilot-poll.py wait new_issue <label> <parked targets>`, run as background Bash (`run_in_background`). Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, look for issues again (step 3); the cursors are unchanged, so step 3 finds the same events. Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
 
 ## Status labels
 
@@ -69,9 +61,9 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
 ## Loop
 
-1. When this skill was just invoked, set `label` to its argument (empty: `ready`), and if `waiting_for` is `"restart"`, set it to null. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down. Only if `waiting_for` is `"answer"` or `"patch"` and `events_since` is null or missing, first set it as under "To wait" and write the state; without a cursor the poller ignores answers or reports a wrong commit.
+1. When this skill was just invoked, set `label` to its argument (empty: `ready`), and if `waiting_for` is `"restart"`, set it to null. If `paused` is set, wait. Otherwise, if `waiting_for` is `"new_issue"`, start the poller with the stored cursors and end your turn; a new cursor would miss comments written while the session was down.
 2. `git status --porcelain` must be empty; otherwise report and pause.
-3. Without a current issue: `gh issue list --label <label> --state open --limit 1000 --json number,title,labels`, skip issues labeled `blocked`, `needs-info` or `needs-human`, take the lowest number. None: send `Keine Issues mit Label <label>`, set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`. If the issue has the label `infrastructure`, set `verbose_before` to `verbose` and `verbose` to true, so the maintainer follows a change to the pipeline itself.
+3. Without a current issue, first resume a parked issue. If entries are waiting, run `check` with the parked targets: the bodies of comment events on an issue are its `answer` (not mirrored), a commit event on a branch gives `Der Maintainer hat den Patch committet.` If an entry has an `answer`, take the lowest such issue: remove it from `parked`, move its fields except `answer` and `waiting_for` back into the state, set `waiting_for` to null, `git switch <branch>` (for `"patch"` then `git pull --ff-only origin <branch>`), apply the `infrastructure` rule below and rerun `step` with the answer. Otherwise: `gh issue list --label <label> --state open --limit 1000 --json number,title,labels`, skip issues labeled `blocked`, `needs-info` or `needs-human`, take the lowest number. None: send `Keine Issues mit Label <label>`, set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`. If the issue has the label `infrastructure`, set `verbose_before` to `verbose` and `verbose` to true, so the maintainer follows a change to the pipeline itself.
 4. Set the step's status label, raise `attempts_per_step[<step>]` by 1, run the step via the Skill tool with arguments `<issue> "<answer>" "<failure>"`, then parse the result block. Always pass all three; an empty one as `""`, since an unpassed placeholder stays literal in the skill.
 5. After `plan-issue` and `review-issue` the working tree must still be clean; otherwise treat the step as `blocked`.
 6. Transitions:
@@ -99,11 +91,15 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
 ## Question
 
-`questions` + 1. Set the status label. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, wait.
+`questions` + 1. Set the status label. Send the open questions with options and recommendation, store them in `question`, set `waiting_for: "answer"`, park.
 
 ## Patch
 
-Set the status label. Send `#<n> Blockierte Änderung als Patch: <comment url>. Bitte auf <branch> committen und pushen.`, set `waiting_for: "patch"`, wait.
+Set the status label. Send `#<n> Blockierte Änderung als Patch: <comment url>. Bitte auf <branch> committen und pushen.`, set `waiting_for: "patch"`, park.
+
+## Park
+
+Set `events_since` to the output of `.github/scripts/autopilot-poll.py now` (for `"patch"`: `git rev-parse HEAD`), so the autopilot's own comments lie before it. Append the parked entry with `answer: null` to `parked`, reset its fields, `attempts` and `failure` in the state and set `waiting_for` to null. If `verbose_before` is not null, restore `verbose` from it and clear it. Continue with step 3.
 
 ## Conflict
 
@@ -115,7 +111,7 @@ Set `step: "review-issue"` and the label `needs-human`. Send `#<n> Merge-Konflik
 
 ## Merge
 
-`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Run `.github/scripts/watch-ci.py master <merge sha>` with the sha from `gh pr view <pr> --json mergeCommit --jq .mergeCommit.oid`. Non-zero exit (`red <run url>` or `missing`): send `#<n> master rot nach Merge: <run url>` (`missing`: `kein CI-Lauf gefunden`) and finish the steps below anyway, since the merge has already happened. Run `.github/scripts/pipeline-metrics.py record`; if it fails, send `#<n> Kennzahlen nicht erfasst: <error>` and go on, since the merge has already happened. If `gh issue view <n> --json state` is still `OPEN`, run `gh issue close <n>`; GitHub closes it via `Closes #<n>` asynchronously, and step 3 would otherwise pick it again by its selection label. Remove the status label and reset the state except `chat_id`, `verbose` and `label`; if `verbose_before` is not null, restore `verbose` from it. If `master` was red, set `paused` and `waiting_for: "resume"` after the reset; `weiter` then continues with the next issue. Then send `#<n> fertig: <pr url>` and continue the loop (if paused: wait); for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
+`gh pr merge <pr> --squash --match-head-commit <head sha>`, `git switch master && git pull --ff-only`. Run `.github/scripts/watch-ci.py master <merge sha>` with the sha from `gh pr view <pr> --json mergeCommit --jq .mergeCommit.oid`. Non-zero exit (`red <run url>` or `missing`): send `#<n> master rot nach Merge: <run url>` (`missing`: `kein CI-Lauf gefunden`) and finish the steps below anyway, since the merge has already happened. Run `.github/scripts/pipeline-metrics.py record`; if it fails, send `#<n> Kennzahlen nicht erfasst: <error>` and go on, since the merge has already happened. If `gh issue view <n> --json state` is still `OPEN`, run `gh issue close <n>`; GitHub closes it via `Closes #<n>` asynchronously, and step 3 would otherwise pick it again by its selection label. Remove the status label and reset the state except `chat_id`, `verbose`, `label` and `parked`; if `verbose_before` is not null, restore `verbose` from it. If `master` was red, set `paused` and `waiting_for: "resume"` after the reset; `weiter` then continues with the next issue. Then send `#<n> fertig: <pr url>` and continue the loop (if paused: wait); for an `infrastructure` issue send `#<n> fertig: <pr url>, Autopilot startet neu` and run `.github/scripts/autopilot-restart.sh` instead, so the service restarts the session with the merged skills and permissions. If it fails (no service), send `#<n> Kein Dienst, bitte Autopilot neu starten`, set `waiting_for: "restart"` and wait.
 
 ## Never
 

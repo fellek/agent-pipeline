@@ -53,7 +53,7 @@ def no_sleep(seconds):
 def test_owner_comment_after_cursor_is_printed(monkeypatch, capsys, poll):
     fake_gh(monkeypatch, poll, [comment()])
 
-    poll.wait("answer", 48, SINCE, sleep=no_sleep)
+    poll.wait([("answer", 48, SINCE)], sleep=no_sleep)
 
     assert events(capsys) == [
         {
@@ -79,7 +79,7 @@ def test_owner_comment_after_cursor_is_printed(monkeypatch, capsys, poll):
 def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     fake_gh(monkeypatch, poll, [ignored], [comment(number=55)])
 
-    poll.wait("answer", 55, SINCE, sleep=no_sleep)
+    poll.wait([("answer", 55, SINCE)], sleep=no_sleep)
 
     assert [e["number"] for e in events(capsys)] == [55]
 
@@ -93,8 +93,8 @@ def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll
         monkeypatch, poll, [issue(60), {**issue(61), "pull_request": {}}], []
     )
 
-    poll.wait("new_issue", "batch-1", sleep=no_sleep)
-    answer_events = poll.poll("answer", 48, SINCE)
+    poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
+    answer_events = poll.poll([("answer", 48, SINCE)])
 
     assert events(capsys) == [{"type": "labeled_issue", "number": 60, "title": "Neu"}]
     assert "labels=batch-1" in calls[0]
@@ -106,7 +106,7 @@ def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll
 def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
     fake_gh(monkeypatch, poll, [issue(60, "batch-1", label)], [issue(61, "batch-1")])
 
-    poll.wait("new_issue", "batch-1", sleep=no_sleep)
+    poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
 
     assert [e["number"] for e in events(capsys)] == [61]
 
@@ -115,7 +115,7 @@ def test_keeps_polling_without_events(monkeypatch, capsys, poll):
     calls = fake_gh(monkeypatch, poll, [], [], [comment()])
     sleeps = []
 
-    poll.wait("answer", 48, SINCE, sleep=sleeps.append)
+    poll.wait([("answer", 48, SINCE)], sleep=sleeps.append)
 
     assert sleeps == [poll.INTERVAL_SECONDS] * 2
     assert len(calls) == 3
@@ -126,7 +126,7 @@ def test_new_commit_on_branch_is_printed(monkeypatch, capsys, poll):
     heads = ["abc", "abc", "def"]
     monkeypatch.setattr(poll, "branch_head", lambda branch: heads.pop(0))
 
-    poll.wait("patch", "issue-71-x", "abc", sleep=no_sleep)
+    poll.wait([("patch", "issue-71-x", "abc")], sleep=no_sleep)
 
     assert events(capsys) == [{"type": "commit", "branch": "issue-71-x", "sha": "def"}]
 
@@ -145,7 +145,7 @@ GH_ERROR = subprocess.CalledProcessError(1, ["gh", "api"])
 def test_keeps_polling_after_transient_gh_errors(monkeypatch, capsys, poll):
     fake_gh(monkeypatch, poll, GH_ERROR, [], GH_ERROR, GH_ERROR, [comment()])
 
-    poll.wait("answer", 48, SINCE, sleep=no_sleep)
+    poll.wait([("answer", 48, SINCE)], sleep=no_sleep)
 
     assert len(events(capsys)) == 1
 
@@ -154,7 +154,7 @@ def test_fails_after_consecutive_gh_errors(monkeypatch, poll):
     fake_gh(monkeypatch, poll, *[GH_ERROR] * poll.MAX_FAILED_POLLS)
 
     with pytest.raises(subprocess.CalledProcessError):
-        poll.wait("answer", 48, SINCE, sleep=no_sleep)
+        poll.wait([("answer", 48, SINCE)], sleep=no_sleep)
 
 
 def test_github_now_reads_date_header(monkeypatch, poll):
@@ -171,32 +171,87 @@ def test_github_now_fails_without_date_header(monkeypatch, poll):
         poll.github_now()
 
 
-@pytest.mark.parametrize(
-    ("argv", "expected"),
-    [
-        (["wait", "answer", "48", SINCE], ("answer", 48, SINCE)),
-        (["wait", "new_issue", "batch-1"], ("new_issue", "batch-1")),
-        (["wait", "patch", "issue-71-x", "abc"], ("patch", "issue-71-x", "abc")),
-    ],
-)
-def test_main_dispatches_wait(monkeypatch, poll, argv, expected):
+LATER = "2026-11-13T11:00:00Z"
+
+
+def test_answers_use_cursor_per_issue_in_one_fetch(monkeypatch, capsys, poll):
+    comments = [
+        comment(number=48, created_at="2026-11-13T10:30:00Z"),
+        comment(number=55, created_at="2026-11-13T10:30:00Z"),
+        comment(number=55, created_at="2026-11-13T11:00:01Z", association="NONE"),
+        comment(number=55, created_at="2026-11-13T11:00:02Z"),
+    ]
+    calls = fake_gh(monkeypatch, poll, comments)
+
+    poll.wait([("answer", 48, SINCE), ("answer", 55, LATER)], sleep=no_sleep)
+
+    assert [(e["number"], e["created_at"]) for e in events(capsys)] == [
+        (48, "2026-11-13T10:30:00Z"),
+        (55, "2026-11-13T11:00:02Z"),
+    ]
+    assert len(calls) == 1
+    assert f"since={SINCE}" in calls[0]
+
+
+def test_wait_ends_on_first_event_of_any_target(monkeypatch, capsys, poll):
+    fake_gh(monkeypatch, poll, [], [], [], [issue(60)])
+    heads = ["abc", "def"]
+    monkeypatch.setattr(poll, "branch_head", lambda branch: heads.pop(0))
+    targets = [
+        ("answer", 48, SINCE),
+        ("patch", "issue-71-x", "abc"),
+        ("new_issue", "ready"),
+    ]
+    sleeps = []
+
+    poll.wait(targets, sleep=sleeps.append)
+
+    assert sleeps == [poll.INTERVAL_SECONDS]
+    assert [e["type"] for e in events(capsys)] == ["commit", "labeled_issue"]
+
+
+@pytest.mark.parametrize("comments", [[], [comment()]], ids=["none", "answer"])
+def test_check_polls_once(monkeypatch, capsys, poll, comments):
+    calls = fake_gh(monkeypatch, poll, comments)
+
+    poll.check([("answer", 48, SINCE)])
+
+    assert len(events(capsys)) == len(comments)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("command", ["wait", "check"])
+def test_main_parses_target_list(monkeypatch, poll, command):
     calls = []
-    monkeypatch.setattr(poll, "wait", lambda *args: calls.append(args))
+    monkeypatch.setattr(poll, command, lambda targets: calls.append(targets))
 
-    poll.main(argv)
+    poll.main(
+        [command, "answer", "48", SINCE, "patch", "issue-71-x", "abc"]
+        + ["new_issue", "batch-1"]
+    )
 
-    assert calls == [expected]
+    assert calls == [
+        [
+            ("answer", 48, SINCE),
+            ("patch", "issue-71-x", "abc"),
+            ("new_issue", "batch-1"),
+        ]
+    ]
 
 
 @pytest.mark.parametrize(
     "argv",
     [
         [],
+        ["wait"],
+        ["check"],
         ["wait", "new_issue"],
-        ["wait", "new_issue", "batch-1", SINCE],
         ["wait", "answer", "48"],
+        ["wait", "answer", "x", SINCE],
         ["wait", "merge", "56", SINCE],
         ["wait", "patch", "issue-71-x"],
+        ["check", "new_issue", "batch-1", SINCE],
+        ["poll", "new_issue", "batch-1"],
     ],
 )
 def test_main_rejects_invalid_arguments(poll, argv):
