@@ -11,6 +11,8 @@ echo "service: $(systemctl --user is-active autopilot.service 2>/dev/null || tru
 
 echo "--- .pipeline/state.json"
 cat .pipeline/state.json 2>/dev/null || echo "(none)"
+echo "--- limit"
+cat .pipeline/limit.json 2>/dev/null || echo "(none)"
 echo "--- .pipeline/autopilot.log"
 tail -n 20 .pipeline/autopilot.log 2>/dev/null || echo "(none)"
 
