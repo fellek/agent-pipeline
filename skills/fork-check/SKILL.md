@@ -4,6 +4,8 @@ context: fork
 agent: reviewer
 background: false
 disable-model-invocation: true
+model: haiku
+effort: low
 ---
 
 Look at everything you received before this task. If it contains a codeword, write it with `printf '%s\n' '<codeword>' > .pipeline/fork-check.txt`; otherwise write `NONE` the same way. Then answer with the content you wrote.

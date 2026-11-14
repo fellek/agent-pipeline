@@ -4,6 +4,8 @@ argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: reviewer
 background: false
+model: opus
+effort: high
 ---
 
 Plan the implementation of issue #$0. Do not change any files.

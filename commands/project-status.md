@@ -1,5 +1,7 @@
 ---
 description: Summarize open issues and pull requests and propose the next step
+model: haiku
+effort: low
 ---
 
 Report the project status. Do not change anything.

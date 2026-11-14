@@ -28,4 +28,6 @@ claude plugin list | grep -q telegram || fail "Telegram plugin is not installed"
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"
 
 mkdir -p .pipeline
-tmux new-session -d -s "$session" -c "$PWD" claude --channels "$channel" -- "/autopilot $label"
+# CLAUDE_CODE_EFFORT_LEVEL would override the effort set per skill.
+tmux new-session -d -s "$session" -c "$PWD" env -u CLAUDE_CODE_EFFORT_LEVEL \
+  claude --model sonnet --effort medium --channels "$channel" -- "/autopilot $label"

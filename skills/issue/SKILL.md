@@ -4,6 +4,8 @@ argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: implementer
 background: false
+model: sonnet
+effort: high
 ---
 
 Work on GitHub issue #$0.

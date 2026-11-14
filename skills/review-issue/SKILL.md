@@ -4,6 +4,8 @@ argument-hint: <issue-number> [unused] [failure-summary]
 context: fork
 agent: reviewer
 background: false
+model: opus
+effort: high
 ---
 
 Review the pull request that was created for issue #$0.
