@@ -29,14 +29,14 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 
 ## Inbound messages
 
-Handle a message according to `waiting_for`:
+Handle a message according to `waiting_for`. While `paused`, only `weiter` and the "Always" commands are handled, so a message sent during a pause is never taken as an answer.
 
 - `"answer"`: post it on the issue as `Antwort des Maintainers (Telegram): <text>`, set `waiting_for` to null, `attempts` to 0 and rerun `step` with the answer as second argument.
 - `"patch"`: as for `"answer"`, after `git pull --ff-only origin <branch>`.
 - `"new_issue"`: look for issues again.
-- `"resume"` or `paused`: `weiter` clears `paused`, runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict) and continues where the state points.
+- `paused`: `weiter` clears `paused` and runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict). If `waiting_for` is `"resume"` or null, it sets `waiting_for` to null and continues where the state points. Otherwise a wait is pending: start the poller as in loop step 1 and end your turn.
 - `"restart"`: every message except `status` and `/verbose`, including `pause`, `weiter` and `label`, only gets the reply that the autopilot needs a restart.
-- Always: `status` gets a short reply with issue, step, attempts and `label`; `label <name>` sets `label` and replies `Label <name>`; if `waiting_for` is `"new_issue"`, stop the poller and look for issues again, otherwise leave `waiting_for` and the poller untouched; `pause` sets `paused` and `waiting_for: "resume"`; `/verbose` toggles `verbose`, replies `Verbose an` or `Verbose aus` and leaves `waiting_for` and the poller untouched; it is never an answer or feedback.
+- Always: `status` gets a short reply with issue, step, attempts and `label`; `label <name>` sets `label` and replies `Label <name>`; if `waiting_for` is `"new_issue"` and not `paused`, stop the poller and look for issues again, otherwise leave `waiting_for` and the poller untouched; `pause` stops the poller, sets `paused` and, only if `waiting_for` is null, `waiting_for: "resume"`, so a pending wait and its `events_since` survive the pause; `/verbose` toggles `verbose`, replies `Verbose an` or `Verbose aus` and leaves `waiting_for` and the poller untouched; it is never an answer or feedback.
 
 ## GitHub events
 
