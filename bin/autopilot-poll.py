@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Poll GitHub for maintainer input on one or more targets; print it as JSON lines.
 
-`wait` polls until a target has an event, `check` polls once.
+`wait` polls until a target has an event, `check` polls once. `next` prints the
+issue to start: open issues with an open blocker are skipped, issues blocking an
+open issue come first, then the lowest number.
 
 Usage:
   autopilot-poll.py now
+  autopilot-poll.py next <label>
   autopilot-poll.py wait|check <target>...
 
 Targets:
@@ -59,13 +62,37 @@ def owner_events(items, number, since):
     ]
 
 
-def labeled_issues(issues):
+def dependencies(number, relation):
+    return gh(f"repos/{{owner}}/{{repo}}/issues/{number}/dependencies/{relation}")
+
+
+def has_open(number, relation):
+    return any(issue["state"] == "open" for issue in dependencies(number, relation))
+
+
+def label_names(issue):
+    return [label["name"] for label in issue["labels"]]
+
+
+def candidates(label):
+    issues = gh(f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}")
     return [
-        {"type": "labeled_issue", "number": i["number"], "title": i["title"]}
+        {"number": i["number"], "title": i["title"], "labels": label_names(i)}
         for i in issues
         if "pull_request" not in i
-        and not SKIPPED_LABELS & {label["name"] for label in i["labels"]}
+        and not SKIPPED_LABELS & set(label_names(i))
+        and not has_open(i["number"], "blocked_by")
     ]
+
+
+def priority(issue):
+    return not has_open(issue["number"], "blocking"), issue["number"]
+
+
+def next_issue(label):
+    issues = candidates(label)
+    if issues:
+        print_events([min(issues, key=priority)])
 
 
 def branch_head(branch):
@@ -100,9 +127,7 @@ def poll(targets):
     events = answers(cursors) if cursors else []
     for mode, *args in targets:
         if mode == "new_issue":
-            (label,) = args
-            path = f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}"
-            events += labeled_issues(gh(path))
+            events += [{"type": "labeled_issue", **i} for i in candidates(*args)]
         elif mode == "patch":
             events += new_commit(*args)
     return events
@@ -154,6 +179,8 @@ def main(argv):
     match argv:
         case ["now"]:
             print(github_now())
+        case ["next", label]:
+            next_issue(label)
         case ["wait" | "check" as command, *args]:
             try:
                 targets = parse_targets(args)

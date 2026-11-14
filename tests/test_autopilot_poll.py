@@ -8,8 +8,10 @@ SINCE = "2026-11-13T10:00:00Z"
 
 
 @pytest.fixture
-def poll():
-    return load_script("autopilot-poll.py")
+def poll(monkeypatch):
+    module = load_script("autopilot-poll.py")
+    monkeypatch.setattr(module, "dependencies", lambda number, relation: [])
+    return module
 
 
 def comment(number=48, created_at="2026-11-13T10:00:01Z", association="OWNER"):
@@ -91,7 +93,9 @@ def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll
     poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
     answer_events = poll.poll([("answer", 48, SINCE)])
 
-    assert events(capsys) == [{"type": "labeled_issue", "number": 60, "title": "Neu"}]
+    assert events(capsys) == [
+        {"type": "labeled_issue", "number": 60, "title": "Neu", "labels": []}
+    ]
     assert "labels=batch-1" in calls[0]
     assert answer_events == []
     assert "labels=" not in calls[1]
@@ -104,6 +108,72 @@ def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
     poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
 
     assert [e["number"] for e in events(capsys)] == [61]
+
+
+def fake_dependencies(monkeypatch, poll, **states):
+    def dependencies(number, relation):
+        return [{"state": s} for s in states.get(f"{relation}_{number}", [])]
+
+    monkeypatch.setattr(poll, "dependencies", dependencies)
+
+
+def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
+    fake_gh(monkeypatch, poll, [issue(60), issue(61)])
+    fake_dependencies(monkeypatch, poll, blocked_by_60=["closed", "open"])
+
+    poll.check([("new_issue", "ready")])
+
+    assert [e["number"] for e in events(capsys)] == [61]
+
+
+@pytest.mark.parametrize(
+    ("blocker", "chosen", "labels"),
+    [("open", 61, ["ready"]), ("closed", 60, ["ready", "infrastructure"])],
+    ids=["open", "closed"],
+)
+def test_next_skips_issue_with_open_blocker(
+    monkeypatch, capsys, poll, blocker, chosen, labels
+):
+    calls = fake_gh(
+        monkeypatch, poll, [issue(61, "ready"), issue(60, "ready", "infrastructure")]
+    )
+    fake_dependencies(monkeypatch, poll, blocked_by_60=[blocker])
+
+    poll.main(["next", "ready"])
+
+    assert events(capsys) == [{"number": chosen, "title": "Neu", "labels": labels}]
+    assert "labels=ready" in calls[0]
+
+
+@pytest.mark.parametrize(
+    ("blocked", "chosen"), [("open", 61), ("closed", 60)], ids=["open", "closed"]
+)
+def test_next_prefers_issue_blocking_an_open_issue(
+    monkeypatch, capsys, poll, blocked, chosen
+):
+    fake_gh(monkeypatch, poll, [issue(60), issue(61), issue(62)])
+    fake_dependencies(monkeypatch, poll, blocking_61=[blocked], blocking_62=[blocked])
+
+    poll.main(["next", "ready"])
+
+    assert [e["number"] for e in events(capsys)] == [chosen]
+
+
+def test_next_without_candidates_prints_nothing(monkeypatch, capsys, poll):
+    fake_gh(monkeypatch, poll, [issue(60, "blocked")])
+
+    poll.main(["next", "ready"])
+
+    assert capsys.readouterr().out == ""
+
+
+def test_dependencies_read_relation_endpoint(monkeypatch):
+    poll = load_script("autopilot-poll.py")
+    calls = fake_gh(monkeypatch, poll, [])
+
+    poll.dependencies(60, "blocked_by")
+
+    assert calls == ["repos/{owner}/{repo}/issues/60/dependencies/blocked_by"]
 
 
 def test_keeps_polling_without_events(monkeypatch, capsys, poll):
@@ -247,6 +317,8 @@ def test_main_parses_target_list(monkeypatch, poll, command):
         ["wait", "patch", "issue-71-x"],
         ["check", "new_issue", "batch-1", SINCE],
         ["poll", "new_issue", "batch-1"],
+        ["next"],
+        ["next", "ready", "batch-1"],
     ],
 )
 def test_main_rejects_invalid_arguments(poll, argv):
