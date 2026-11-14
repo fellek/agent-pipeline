@@ -1,6 +1,6 @@
 ---
 description: Post an implementation plan for a GitHub issue without changing code
-argument-hint: <issue-number> [maintainer-answer]
+argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: reviewer
 background: false
@@ -9,6 +9,9 @@ background: false
 Plan the implementation of issue #$0. Do not change any files.
 
 Maintainer answer to an earlier open question (empty if none): $1
+
+Failure summary of the previous attempt (empty if none): $2
+If set, check that cause first and do not repeat the same approach.
 
 1. Read the issue and all its comments.
 2. Read the affected code.

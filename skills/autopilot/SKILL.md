@@ -13,10 +13,10 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 {"chat_id": null, "issue": null, "branch": null, "pr": null, "step": null,
  "attempts": 0, "review_rounds": 0, "waiting_for": null, "question": null,
  "events_since": null, "paused": false, "verbose": false, "verbose_before": null,
- "label": "ready", "attempts_per_step": {}, "questions": 0}
+ "label": "ready", "attempts_per_step": {}, "questions": 0, "failure": null}
 ```
 
-`label` is the selection label for step 3. `attempts_per_step` and `questions` feed the metrics line; missing fields count as `{}` and `0`.
+`label` is the selection label for step 3. `attempts_per_step` and `questions` feed the metrics line; missing fields count as `{}` and `0`. `failure` is the cause of the last failed attempt of the current step; missing counts as null.
 
 `waiting_for` is `null`, `"answer"`, `"patch"`, `"new_issue"`, `"resume"` or `"restart"`. Append one line per transition to `.pipeline/autopilot.log`: `<date -u +%FT%TZ> #<issue> <step> <event>`. If `verbose` is set (missing counts as false), also send each line without the date.
 
@@ -31,7 +31,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 
 Handle a message according to `waiting_for`. While `paused`, only `weiter` and the "Always" commands are handled, so a message sent during a pause is never taken as an answer.
 
-- `"answer"`: post it on the issue as `Antwort des Maintainers (Telegram): <text>`, set `waiting_for` to null, `attempts` to 0 and rerun `step` with the answer as second argument.
+- `"answer"`: post it on the issue as `Antwort des Maintainers (Telegram): <text>`, set `waiting_for` and `failure` to null, `attempts` to 0 and rerun `step` with the answer as second argument.
 - `"patch"`: as for `"answer"`, after `git pull --ff-only origin <branch>`.
 - `"new_issue"`: look for issues again.
 - `paused`: `weiter` clears `paused` and runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict). If `waiting_for` is `"resume"` or null, it sets `waiting_for` to null and continues where the state points. Otherwise a wait is pending: start the poller as in loop step 1 and end your turn.
@@ -51,7 +51,7 @@ Keep at most one poller. When a Telegram message arrives, stop the poller before
 
 - `"answer"`: the comment bodies are the answer. Do not mirror them; continue as for a Telegram answer.
 - `"new_issue"`: look for issues again.
-- `"patch"`: `git pull --ff-only origin <branch>`, set `waiting_for` to null, `attempts` to 0 and rerun `step` with the answer `Der Maintainer hat den Patch committet.`
+- `"patch"`: `git pull --ff-only origin <branch>`, set `waiting_for` and `failure` to null, `attempts` to 0 and rerun `step` with the answer `Der Maintainer hat den Patch committet.`
 - Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
 
 ## Status labels
@@ -72,7 +72,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 1. When this skill was just invoked, set `label` to its argument (empty: `ready`), and if `waiting_for` is `"restart"`, set it to null. If `paused` is set, wait. Otherwise, if `waiting_for` is set, start the poller with the stored `events_since` and end your turn; a new cursor would miss comments written while the session was down. Only if `waiting_for` is `"answer"` or `"patch"` and `events_since` is null or missing, first set it as under "To wait" and write the state; without a cursor the poller ignores answers or reports a wrong commit.
 2. `git status --porcelain` must be empty; otherwise report and pause.
 3. Without a current issue: `gh issue list --label <label> --state open --limit 1000 --json number,title,labels`, skip issues labeled `blocked`, `needs-info` or `needs-human`, take the lowest number. None: send `Keine Issues mit Label <label>`, set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only`, create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`. If the issue has the label `infrastructure`, set `verbose_before` to `verbose` and `verbose` to true, so the maintainer follows a change to the pipeline itself.
-4. Set the step's status label, raise `attempts_per_step[<step>]` by 1, run the step via the Skill tool with arguments `<issue>` or `<issue> "<answer>"`, then parse the result block.
+4. Set the step's status label, raise `attempts_per_step[<step>]` by 1, run the step via the Skill tool with arguments `<issue> "<answer>" "<failure>"`, then parse the result block. Always pass all three; an empty one as `""`, since an unpassed placeholder stays literal in the skill.
 5. After `plan-issue` and `review-issue` the working tree must still be clean; otherwise treat the step as `blocked`.
 6. Transitions:
 
@@ -90,7 +90,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
    | any | needs_input | Question |
    | any | blocked or no result block | Failure |
 
-   When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, set the label `needs-human`, send a summary of the open review findings, set `paused` and `waiting_for: "resume"`, wait. Reset `attempts` on every step change.
+   When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, set the label `needs-human`, send a summary of the open review findings, set `paused` and `waiting_for: "resume"`, wait. Reset `attempts` and `failure` on every step change.
 7. Run `.github/scripts/merge-master.py`. `merged`: `git push origin <branch>`, continue with `review-issue` (`review_rounds` unchanged). `conflict`: Conflict below. Any other failure: Failure.
    Run `.github/scripts/watch-ci.py <branch> <head sha>`. Non-zero exit (`red <run url>` or `missing`): Failure, with the output in the summary.
    Then run `.github/scripts/agent-review.py <pr> <head sha>` instead of watching `agent-review` runs, since a skipped run counts as green (non-zero exit: Failure).
@@ -111,7 +111,7 @@ Set `step: "review-issue"` and the label `needs-human`. Send `#<n> Merge-Konflik
 
 ## Failure
 
-`attempts` + 1. Below 3: rerun the step. Otherwise: set the status label, send step and summary, set `paused` and `waiting_for: "resume"`, wait.
+`attempts` + 1. Set `failure` to the `SUMMARY` of the result block (no result block: `Kein Ergebnisblock`; step 7: the script output), with `"` replaced by `'`, since skill arguments are split shell-style. Below 3: rerun the step. Otherwise: set the status label, send step and summary, set `paused` and `waiting_for: "resume"`, wait.
 
 ## Merge
 

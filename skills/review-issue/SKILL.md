@@ -1,12 +1,15 @@
 ---
 description: Review the pull request that was created for a GitHub issue
-argument-hint: <issue-number>
+argument-hint: <issue-number> [unused] [failure-summary]
 context: fork
 agent: reviewer
 background: false
 ---
 
 Review the pull request that was created for issue #$0.
+
+Failure summary of the previous attempt (empty if none): $2
+If set, check that cause first and do not repeat the same approach.
 
 1. Find the open PR for the issue (branch `issue-$0-*` or `Closes #$0` in the description). If there is none or more than one, end with `STATUS: blocked`.
 2. Check out the PR branch. Read the issue, the PR description and all existing review comments.

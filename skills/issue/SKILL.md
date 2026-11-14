@@ -1,6 +1,6 @@
 ---
 description: Implement a GitHub issue and open a pull request
-argument-hint: <issue-number> [maintainer-answer]
+argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: implementer
 background: false
@@ -9,6 +9,9 @@ background: false
 Work on GitHub issue #$0.
 
 Maintainer answer to an earlier open question (empty if none): $1
+
+Failure summary of the previous attempt (empty if none): $2
+If set, check that cause first and do not repeat the same approach.
 
 1. Read the issue and all its comments. Handle unclear scope or acceptance criteria as described in CLAUDE.md under "Autopilot operation".
 2. Check for an existing branch or PR for this issue. If one exists, continue there.

@@ -1,6 +1,6 @@
 ---
 description: Address the review comments on the pull request of a GitHub issue
-argument-hint: <issue-number> [maintainer-answer]
+argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: implementer
 background: false
@@ -9,6 +9,9 @@ background: false
 Address the review on the pull request for issue #$0.
 
 Maintainer answer or feedback (empty if none): $1
+
+Failure summary of the previous attempt (empty if none): $2
+If set, check that cause first and do not repeat the same approach.
 
 1. Find the open PR for the issue (branch `issue-$0-*` or `Closes #$0` in the description). If there is none or more than one, end with `STATUS: blocked`.
 2. Check out the PR branch and read all unresolved review comments and PR comments.
