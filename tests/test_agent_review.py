@@ -1,20 +1,15 @@
-import importlib.util
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
+from conftest import load_script
 
-SCRIPT = Path(__file__).parents[1] / ".github" / "scripts" / "agent-review.py"
 HEAD = "head"
 
 
 @pytest.fixture
 def gate():
-    spec = importlib.util.spec_from_file_location("agent_review", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script("agent-review.py")
 
 
 def review(body="Verdict: approve\n\nLooks good.", commit_id=HEAD, state="COMMENTED"):

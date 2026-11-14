@@ -1,20 +1,15 @@
-import importlib.util
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
+from conftest import load_script
 
-SCRIPT = Path(__file__).parents[1] / ".github" / "scripts" / "autopilot-poll.py"
 SINCE = "2026-11-13T10:00:00Z"
 
 
 @pytest.fixture
 def poll():
-    spec = importlib.util.spec_from_file_location("autopilot_poll", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script("autopilot-poll.py")
 
 
 def comment(number=48, created_at="2026-11-13T10:00:01Z", association="OWNER"):
