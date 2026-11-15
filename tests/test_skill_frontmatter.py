@@ -27,3 +27,8 @@ def test_declares_model_and_effort(path):
 @pytest.mark.parametrize("skill", ["plan-issue", "issue", "review-issue", "fix-review"])
 def test_step_skills_run_in_background(skill):
     assert frontmatter(CLAUDE / "skills" / skill / "SKILL.md")["background"] == "true"
+
+
+@pytest.mark.parametrize("skill", ["issue", "review-issue", "fix-review"])
+def test_step_skills_create_followup_issues(skill):
+    assert "followup" in (CLAUDE / "skills" / skill / "SKILL.md").read_text()

@@ -20,9 +20,10 @@ If set, check that cause first and do not repeat the same approach.
 3. Otherwise create branch `issue-$0-<short-slug>` from the current `master`.
 4. Implement the smallest change that satisfies the issue. Add or update tests.
 5. Run the checks listed in `.claude/rules/project.md`. On failure read the logs first. Do not report `done` while a check fails.
-6. Use a sub agent to check the diff for duplicated code and wait for its result before pushing.
-7. Push and open a PR to `master` with `Closes #$0` in the description.
-8. Post a brief comment on the issue: PR link, what was done, open points.
-9. End with the result block from CLAUDE.md.
+6. Create a followup issue for each finding outside the scope, as described in CLAUDE.md. List them in the PR description and the issue comment.
+7. Use a sub agent to check the diff for duplicated code and wait for its result before pushing.
+8. Push and open a PR to `master` with `Closes #$0` in the description.
+9. Post a brief comment on the issue: PR link, what was done, open points.
+10. End with the result block from CLAUDE.md.
 
 Do not merge.
