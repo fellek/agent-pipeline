@@ -24,7 +24,10 @@ def test_declares_model_and_effort(path):
     assert {"model", "effort"} <= frontmatter(path).keys()
 
 
-@pytest.mark.parametrize("skill", ["plan-issue", "issue", "review-issue", "fix-review"])
+@pytest.mark.parametrize(
+    "skill",
+    ["plan-issue", "issue", "review-issue", "fix-review", "find-answer"],
+)
 def test_step_skills_run_in_background(skill):
     assert frontmatter(CLAUDE / "skills" / skill / "SKILL.md")["background"] == "true"
 

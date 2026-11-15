@@ -25,7 +25,7 @@ from urllib.parse import quote
 
 INTERVAL_SECONDS = 60
 MAX_FAILED_POLLS = 3
-SKIPPED_LABELS = {"blocked", "needs-info", "needs-human"}
+SKIPPED_LABELS = {"question", "parked"}
 TARGET_ARITY = {"answer": 2, "new_issue": 1, "patch": 2}
 
 

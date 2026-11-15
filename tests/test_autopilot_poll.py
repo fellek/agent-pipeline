@@ -101,7 +101,7 @@ def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll
     assert "labels=" not in calls[1]
 
 
-@pytest.mark.parametrize("label", ["blocked", "needs-info", "needs-human"])
+@pytest.mark.parametrize("label", ["question", "parked"])
 def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
     fake_gh(monkeypatch, poll, [issue(60, "batch-1", label)], [issue(61, "batch-1")])
 
@@ -160,7 +160,7 @@ def test_next_prefers_issue_blocking_an_open_issue(
 
 
 def test_next_without_candidates_prints_nothing(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [issue(60, "blocked")])
+    fake_gh(monkeypatch, poll, [issue(60, "parked")])
 
     poll.main(["next", "ready"])
 
