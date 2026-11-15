@@ -3,7 +3,7 @@ description: Implement a GitHub issue and open a pull request
 argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: implementer
-background: false
+background: true
 model: sonnet
 effort: high
 ---

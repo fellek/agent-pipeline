@@ -3,7 +3,7 @@ description: Post an implementation plan for a GitHub issue without changing cod
 argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: reviewer
-background: false
+background: true
 model: opus
 effort: high
 ---

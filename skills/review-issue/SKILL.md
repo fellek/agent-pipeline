@@ -3,7 +3,7 @@ description: Review the pull request that was created for a GitHub issue
 argument-hint: <issue-number> [unused] [failure-summary]
 context: fork
 agent: reviewer
-background: false
+background: true
 model: opus
 effort: high
 ---

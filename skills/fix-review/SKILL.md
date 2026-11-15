@@ -3,7 +3,7 @@ description: Address the review comments on the pull request of a GitHub issue
 argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: implementer
-background: false
+background: true
 model: sonnet
 effort: medium
 ---
