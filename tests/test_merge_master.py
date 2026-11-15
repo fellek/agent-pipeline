@@ -1,7 +1,5 @@
-import subprocess
-
 import pytest
-from conftest import load_script
+from conftest import commit, git, load_script
 
 
 @pytest.fixture
@@ -9,29 +7,8 @@ def script():
     return load_script("merge-master.py")
 
 
-def git(cwd, *args):
-    return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True
-    ).stdout.strip()
-
-
-def commit(cwd, name, content):
-    (cwd / name).write_text(content)
-    git(cwd, "add", name)
-    git(cwd, "commit", "-m", name)
-    return git(cwd, "rev-parse", "HEAD")
-
-
 @pytest.fixture
-def repos(tmp_path, monkeypatch):
-    for key, value in {
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@t",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@t",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-    }.items():
-        monkeypatch.setenv(key, value)
+def repos(tmp_path, monkeypatch, git_identity):
     remote, upstream, clone = (tmp_path / n for n in ("remote", "upstream", "clone"))
     git(tmp_path, "init", "--bare", "-b", "master", str(remote))
     git(tmp_path, "clone", str(remote), str(upstream))
