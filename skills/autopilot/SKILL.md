@@ -32,11 +32,18 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 
 ## Inbound messages
 
-Handle a message according to `waiting_for`. While `paused`, only `weiter` and the "Always" commands are handled, so a message sent during a pause is never taken as an answer.
+Handle a message according to `waiting_for`. While `paused`, only `weiter`, a task command and the "Always" commands are handled, so a message sent during a pause is never taken as an answer.
 
 - Answer: `#<n> <text>` is the answer for the parked entry of issue n; without the prefix it is for the only waiting parked entry. If several are waiting, reply `Bitte mit #<n> antworten`. Stop the poller, post `<text>` on the issue as `Antwort des Maintainers (Telegram): <text>` and store it in `answer` of the entry. Without a current issue continue with step 3; a current issue is not interrupted.
 - `"new_issue"`, no answer: look for issues again.
 - `paused`, unless `waiting_for` is `"step"`: `weiter` clears `paused` and runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict). If `waiting_for` is `"resume"` or null, it sets `waiting_for` to null and continues where the state points. Otherwise a wait is pending: start the poller as in loop step 1 and end your turn.
+- Task: while `paused` and `waiting_for` is `"resume"` or `"new_issue"`, `/<task> <n>` with `<task>` in `plan-issue`, `issue`, `review-issue`, `fix-review` starts the pipeline at that step. Stop the poller, then prepare issue n. If n cannot be started or a command fails, report it and leave the state, label and branch as they were. Do the checks and git commands first and change the state only at the end. First check that `git status --porcelain` is empty; otherwise reply as in loop step 2 and stay paused. Then:
+  - If n is not the current issue or parked entry, or its `pr` is null: run `.github/scripts/issue-pr.py <n>`. `CLOSED`: reply `#<n> ist geschlossen`. Without a PR, `review-issue` and `fix-review` reply `#<n> kein PR, /<task> nicht gestartet`.
+  - Parked entry: `git switch <branch>`, `git pull --ff-only origin <branch>` if a PR exists or its `waiting_for` is `"patch"`.
+  - Current issue: `git pull --ff-only origin <branch>` if a PR exists.
+  - Any other issue: with a PR: `git fetch origin <branch>`, `git switch <branch>`, `git pull --ff-only origin <branch>`; without a PR: switch to or create `issue-<n>-<short-slug>` from `master` as in step 3.
+  Then change the state. If a current issue exists and is not n, it stays as it is (branch, PR): reply `#<cur> bleibt bei <step> stehen, fortsetzen mit /<step> <cur>`, set its label `needs-human` so `next` skips it, restore `verbose` from `verbose_before` and reset `attempts_per_step`, `questions`, `question` and `events_since` as in Park. Then load n: for a parked entry, remove it from `parked` and move its fields except `answer` and `waiting_for` back into the state, `question` null; if the lookup found a PR, set `pr` from its output (keep a stored `review_rounds`); for any other issue also set `review_rounds` from the output (0 without a PR, `pr` null). Unless n is the current issue, apply the `infrastructure` rule of step 3 to n.
+  Then set `issue`, `branch` and `step: "<task>"`, reset `attempts` and `failure`, clear `paused`, set `waiting_for` to null, log `#<n> <task> manual start` and continue with loop step 2. `review_rounds` is never reset, so the review limits of loop step 6 still apply. An unknown task or a missing number gets the pause reply.
 - `"step"`: a fork works in the working tree, so never run git or start a step. `status`, `label`, `pause`, `/verbose` and answers for parked issues work as in "Always" (`pause` keeps `"step"`); `status` also says that a step is running. `weiter` only clears `paused`, without `git pull`. Any other message gets the reply that a step is running.
 - `"restart"`: every message except `status` and `/verbose`, including `pause`, `weiter` and `label`, only gets the reply that the autopilot needs a restart.
 - Always: `status` gets a short reply with issue, step, attempts, `label` and the parked issues with their `waiting_for`; `label <name>` sets `label` and replies `Label <name>`; if `waiting_for` is `"new_issue"` and not `paused`, stop the poller and look for issues again, otherwise leave `waiting_for` and the poller untouched; `pause` stops the poller, sets `paused` and, only if `waiting_for` is null, `waiting_for: "resume"`, so a pending wait and its `events_since` survive the pause; `/verbose` toggles `verbose`, replies `Verbose an` or `Verbose aus` and leaves `waiting_for` and the poller untouched; it is never an answer or feedback.
@@ -57,7 +64,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 | `review-issue` | `in-review` |
 | Step 7 passed | `approved` |
 | Question, Patch | `needs-info` |
-| Failure pause | `needs-human` |
+| Failure pause, issue left behind by a task command | `needs-human` |
 | Merge | none |
 
 ## Loop
