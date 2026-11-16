@@ -17,7 +17,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
  "task_id": null, "park": null, "parked": []}
 ```
 
-`label` is the selection label for step 3. `attempts_per_step` and `questions` feed the metrics line; missing fields count as `{}` and `0`. `failure` is the cause of the last failed attempt of the current step; missing counts as null. `task_id` is the ID of the running fork, set in loop step 4 and cleared when it ends. `park` is a pending park reason or null.
+`label` is the selection label for step 3. In the step `setprio` (an issue without status label is checked, loop step 3) `branch` and `pr` are null. `attempts_per_step` and `questions` feed the metrics line; missing fields count as `{}` and `0`. `failure` is the cause of the last failed attempt of the current step; missing counts as null. `task_id` is the ID of the running fork, set in loop step 4 and cleared when it ends. `park` is a pending park reason or null.
 
 `parked` lists the issues waiting for the maintainer, each `{issue, branch, pr, step, review_rounds, attempts_per_step, questions, waiting_for, events_since, question, answer, reason}`; missing counts as `[]`. A parked entry is waiting while its `answer` is null. `reason` is `Rückfrage`, `Patch`, `manuell`, `abgebrochen`, `Review-Limit`, `Fehlversuche` or `Merge-Konflikt`.
 
@@ -27,7 +27,7 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
-- Send messages only for: question, blocked change patch, review round info, issue finished, error/pause, no issues with the label. Prefix each with `#<issue>`. No messages for intermediate steps except the `verbose` log lines.
+- Send messages only for: question, blocked change patch, review round info, issue finished, new followup issue, error/pause, no issues with the label. Prefix each with `#<issue>`. No messages for intermediate steps except the `verbose` log lines.
 - To wait: unless `paused`, start the poller if `waiting_for` is `"new_issue"` (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
@@ -41,6 +41,7 @@ Handle a message according to `waiting_for`. While `paused`, only `weiter`, `cle
 - `stop #<n>`: as `park #<n>`, but with `"step"`: stop the fork with `TaskStop` on `task_id` (the ID the Skill tool returned for the fork), clear `task_id` and run Park with the reason `abgebrochen`; `step` stays unchanged. Without `"step"` it works like `park #<n>`.
 - Task: while `paused` and `waiting_for` is `"resume"` or `"new_issue"`, `/<task> <n>` with `<task>` in `plan-issue`, `issue`, `review-issue`, `fix-review` starts the pipeline at that step. Stop the poller, then prepare issue n. If n cannot be started or a command fails, report it and leave the state, label and branch as they were. Do the checks and git commands first and change the state only at the end. First check that `git status --porcelain` is empty; otherwise reply as in loop step 2 and stay paused. Then:
   - If n is not the current issue or parked entry, or its `pr` is null: run `.github/scripts/issue-pr.py <n>`. `CLOSED`: reply `#<n> ist geschlossen`. Without a PR, `review-issue` and `fix-review` reply `#<n> kein PR, /<task> nicht gestartet`.
+  - Parked or current entry whose `branch` is null (step `setprio`): treat it as "any other issue" below.
   - Parked entry: `git switch <branch>`, `git pull --ff-only origin <branch>` if a PR exists or its `waiting_for` is `"patch"`.
   - Current issue: `git pull --ff-only origin <branch>` if a PR exists.
   - Any other issue: with a PR: `git fetch origin <branch>`, `git switch <branch>`, `git pull --ff-only origin <branch>`; without a PR: switch to or create `issue-<n>-<short-slug>` from `master` as in step 3.
@@ -58,12 +59,13 @@ The poller is `.github/scripts/autopilot-poll.py wait new_issue <label> <parked 
 
 ## Status labels
 
-An issue carries exactly one status label. Setting one removes the others (`gh issue edit <n> --add-label <new> --remove-label <old>`). A selection label other than `ready` is no status label and stays on the issue.
+An issue carries exactly one status label. Setting one removes the others (`gh issue edit <n> --add-label <new> --remove-label <old>`). A selection label other than `ready` is no status label and stays on the issue. The types `bug` and `enhancement` are no status labels either; `setprio` sets them.
 
 | Step or event | Label |
 |---|---|
 | `plan-issue`, `issue`, `fix-review` | `in-progress` |
 | `review-issue` | `in-review` |
+| `setprio` running | none; `done`: `ready` |
 | Step 7 passed | `approved` |
 | Question, while `find-answer` runs | `question` |
 | Park, any reason | `parked` |
@@ -73,13 +75,14 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
 1. When this skill was just invoked, set `label` to its argument (empty: `ready`), and if `waiting_for` is `"restart"` or `"step"`, set it to null and `task_id` to null (a fork ends with the session, so the step runs again, unless `park` is set: then run Park; if `question` is set, start `find-answer` again as in Question, without `questions` + 1, without a new message and keeping `events_since`, instead of the step). If `paused` is set, wait. Otherwise, if `waiting_for` is `"new_issue"`, start the poller with the stored cursors and end your turn; a new cursor would miss comments written while the session was down.
 2. `git status --porcelain` must be empty; otherwise report that `cleanup` secures the changes on a branch and pause.
-3. Without a current issue, first resume a parked issue. If entries are waiting, run `check` with the parked targets: the bodies of comment events on an issue are its `answer` (not mirrored), a commit event on a branch gives `Der Maintainer hat den Patch committet.` If an entry has an `answer`, take the lowest such issue: `git switch <branch>` (if `pr` is null, first run `.github/scripts/issue-pr.py <n>` and keep its PR, since a stopped `issue` fork may already have opened one; then `git pull --ff-only origin <branch>` if a PR exists or for `"patch"`); only when that succeeded, remove it from `parked`, move its fields except `question`, `answer` and `waiting_for` back into the state, set `pr` from the lookup and `waiting_for` to null, apply the `infrastructure` rule below and rerun `step` with the answer. Otherwise take the issue printed by `.github/scripts/autopilot-poll.py next <label>`. None: send `Keine Issues mit Label <label>`, set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only` (the switches as in "Switching branches"), create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`. If the issue's `labels` contain `infrastructure`, set `verbose_before` to `verbose` and `verbose` to true, so the maintainer follows a change to the pipeline itself.
-4. Set the step's status label, raise `attempts_per_step[<step>]` by 1, run the step via the Skill tool with arguments `<issue> "<answer>" "<failure>"` (always pass all three; an empty one as `""`, since an unpassed placeholder stays literal in the skill), set `waiting_for: "step"` and `task_id` to the ID of the fork, write the state and end your turn. The completion notification of the fork carries the result block; ignore one whose ID is not `task_id` (a stopped fork). Set `waiting_for` and `task_id` to null and parse it. If `question` is set, it is the result of `find-answer`: handle it as in Question and skip the rest of this step. If `paused` or `park` is set, only record the result: update `step` (after `review-issue` approve it is `review-issue`, since step 7 is not a skill step), `pr`, counters and label, and send the message of a Question, Patch or Failure; a Question, a Patch, the 3rd failed attempt and the 5th review round set `park` to their reason (replacing `manuell`). Nothing the transition would run next (a rerun, step 7, step 3) starts before `weiter`. Then, if `park` is set, run Park; otherwise set `waiting_for: "resume"` and wait.
-5. After `plan-issue` and `review-issue` the working tree must still be clean; otherwise treat the step as `blocked`.
+3. Without a current issue, first resume a parked issue. If entries are waiting, run `check` with the parked targets: the bodies of comment events on an issue are its `answer` (not mirrored), a commit event on a branch gives `Der Maintainer hat den Patch committet.` If an entry has an `answer`, take the lowest such issue: if `branch` is null (step `setprio`), `git switch master && git pull --ff-only` (the switches as in "Switching branches"), else `git switch <branch>` (if `pr` is null, first run `.github/scripts/issue-pr.py <n>` and keep its PR, since a stopped `issue` fork may already have opened one; then `git pull --ff-only origin <branch>` if a PR exists or for `"patch"`); only when that succeeded, remove it from `parked`, move its fields except `question`, `answer` and `waiting_for` back into the state, set `pr` from the lookup and `waiting_for` to null, apply the `infrastructure` rule below (not for `setprio`) and rerun `step` with the answer. Otherwise take the lowest issue printed by `.github/scripts/autopilot-poll.py untriaged <label>`: set `issue`, `step: "setprio"`, `branch` and `pr` null, run `git switch master && git pull --ff-only` (the switches as in "Switching branches"), so the step judges against the rules on `master`, and continue with step 4. If it has the label `followup`, first send `#<n> Neues Folge-Issue: <title>. <one sentence from its body>`. Otherwise take the issue printed by `.github/scripts/autopilot-poll.py next <label>`. None: send `Keine Issues mit Label <label>`, set `waiting_for: "new_issue"`, wait. Otherwise `git switch master && git pull --ff-only` (the switches as in "Switching branches"), create branch `issue-<n>-<short-slug>`, set `step: "plan-issue"`. If the issue's `labels` contain `infrastructure`, set `verbose_before` to `verbose` and `verbose` to true, so the maintainer follows a change to the pipeline itself.
+4. Set the step's status label (none for `setprio`), raise `attempts_per_step[<step>]` by 1, run the step via the Skill tool with arguments `<issue> "<answer>" "<failure>"` (always pass all three; an empty one as `""`, since an unpassed placeholder stays literal in the skill), set `waiting_for: "step"` and `task_id` to the ID of the fork, write the state and end your turn. The completion notification of the fork carries the result block; ignore one whose ID is not `task_id` (a stopped fork). Set `waiting_for` and `task_id` to null and parse it. If `question` is set, it is the result of `find-answer`: handle it as in Question and skip the rest of this step. If `paused` or `park` is set, only record the result: update `step` (after `review-issue` approve it is `review-issue`, since step 7 is not a skill step; after `setprio` done with `park` set it stays `setprio`, otherwise run Setprio done instead), `pr`, counters and label, and send the message of a Question, Patch or Failure; a Question, a Patch, the 3rd failed attempt and the 5th review round set `park` to their reason (replacing `manuell`). Nothing the transition would run next (a rerun, step 7, step 3) starts before `weiter`. Then, if `park` is set, run Park; otherwise set `waiting_for: "resume"` and wait.
+5. After `plan-issue`, `review-issue` and `setprio` the working tree must still be clean; otherwise treat the step as `blocked`.
 6. Transitions:
 
    | Step | Result | Next |
    |---|---|---|
+   | `setprio` | done | Setprio done |
    | `plan-issue` | done | `issue` |
    | `issue` | done | store PR number (`gh pr list --head <branch>`), `review-issue` |
    | `review-issue` | approve | CI |
@@ -103,6 +106,10 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
 
 Before every `git switch`, except in Merge (the branch is merged and deleted on origin), run `.github/scripts/leave-branch.py <checked-out branch>`. `dirty`: reply as in loop step 2 and pause. `push failed: <error>`: send `#<n> Push von <branch> fehlgeschlagen: <error>, nach Behebung weiter` and pause. Nothing is switched and the state is unchanged then; `weiter` repeats the loop step that ran the switch.
 
+## Setprio done
+
+Set the status label `ready` (removing `question` or `parked` if present). Reset the state except `chat_id`, `verbose`, `label`, `parked` and `paused`, send no message. If `paused`, set `waiting_for: "resume"` and wait; otherwise continue with loop step 3.
+
 ## Question
 
 `questions` + 1. Store the open questions in `question`, set the status label `question` and send them with options and recommendation. If `paused` or `park` is set, park with the reason `Rückfrage` without a search. Otherwise set `events_since` to the output of `.github/scripts/autopilot-poll.py now`, so a maintainer comment written during the search is not lost, and run `find-answer` via the Skill tool with `<issue> "<question>" ""` (`"` replaced by `'`), set `waiting_for: "step"` and `task_id`, write the state and end your turn. `step` stays the asking step, and the search does not count in `attempts_per_step`.
@@ -118,7 +125,7 @@ Send `#<n> Blockierte Änderung als Patch: <comment url>. Bitte auf <branch> com
 
 ## Park
 
-Set `park` to the reason and run `.github/scripts/leave-branch.py <branch>`. `dirty` or `push failed`: send the message of "Switching branches", set `paused` and `waiting_for: "resume"`, keep `park` set (`weiter` runs Park again), wait. Otherwise set the status label `parked`. Set `events_since` to the output of `.github/scripts/autopilot-poll.py now` (for `"patch"`: `git rev-parse HEAD`), so the autopilot's own comments lie before it. Append the parked entry with `reason` and `answer` (the found answer of Question, else null) to `parked`, reset its fields, `attempts`, `failure`, `task_id` and `park` in the state and set `waiting_for` to null. If `verbose_before` is not null, restore `verbose` from it and clear it. Except for `Rückfrage` and `Patch`, which sent their message already, send `#<n> geparkt (<reason>)`. Continue with step 3, unless the pipeline was `paused` before: then wait.
+Set `park` to the reason and run `.github/scripts/leave-branch.py <branch>` (skipped if `branch` is null). `dirty` or `push failed`: send the message of "Switching branches", set `paused` and `waiting_for: "resume"`, keep `park` set (`weiter` runs Park again), wait. Otherwise set the status label `parked`. Set `events_since` to the output of `.github/scripts/autopilot-poll.py now` (for `"patch"`: `git rev-parse HEAD`), so the autopilot's own comments lie before it. Append the parked entry with `reason` and `answer` (the found answer of Question, else null) to `parked`, reset its fields, `attempts`, `failure`, `task_id` and `park` in the state and set `waiting_for` to null. If `verbose_before` is not null, restore `verbose` from it and clear it. Except for `Rückfrage` and `Patch`, which sent their message already, send `#<n> geparkt (<reason>)`. Continue with step 3, unless the pipeline was `paused` before: then wait.
 
 ## Conflict
 

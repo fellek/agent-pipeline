@@ -87,7 +87,7 @@ def issue(number, *labels):
 
 def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
     calls = fake_gh(
-        monkeypatch, poll, [issue(60), {**issue(61), "pull_request": {}}], []
+        monkeypatch, poll, [issue(60), {**issue(61), "pull_request": {}}], [], []
     )
 
     poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
@@ -98,12 +98,19 @@ def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll
     ]
     assert "labels=batch-1" in calls[0]
     assert answer_events == []
-    assert "labels=" not in calls[1]
+    assert "labels=" not in calls[2]
 
 
 @pytest.mark.parametrize("label", ["question", "parked"])
 def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
-    fake_gh(monkeypatch, poll, [issue(60, "batch-1", label)], [issue(61, "batch-1")])
+    fake_gh(
+        monkeypatch,
+        poll,
+        [issue(60, "batch-1", label)],
+        [],
+        [issue(61, "batch-1")],
+        [],
+    )
 
     poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
 
@@ -118,7 +125,7 @@ def fake_dependencies(monkeypatch, poll, **states):
 
 
 def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [issue(60), issue(61)])
+    fake_gh(monkeypatch, poll, [issue(60), issue(61)], [])
     fake_dependencies(monkeypatch, poll, blocked_by_60=["closed", "open"])
 
     poll.check([("new_issue", "ready")])
@@ -165,6 +172,59 @@ def test_next_without_candidates_prints_nothing(monkeypatch, capsys, poll):
     poll.main(["next", "ready"])
 
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize(
+    "status", ["ready", "in-progress", "in-review", "approved", "question", "parked"]
+)
+def test_untriaged_skips_status_label(monkeypatch, capsys, poll, status):
+    fake_gh(monkeypatch, poll, [issue(60, status), issue(61)])
+
+    poll.main(["untriaged", "batch-1"])
+
+    assert [e["number"] for e in events(capsys)] == [61]
+
+
+def test_untriaged_reports_issue_without_status_label(monkeypatch, capsys, poll):
+    calls = fake_gh(
+        monkeypatch,
+        poll,
+        [
+            issue(60, "followup"),
+            issue(61, "batch-1"),
+            issue(62, "bug", "infrastructure"),
+            {**issue(63), "pull_request": {}},
+        ],
+    )
+
+    poll.main(["untriaged", "batch-1"])
+
+    assert events(capsys) == [
+        {"number": 60, "title": "Neu", "labels": ["followup"]},
+        {"number": 62, "title": "Neu", "labels": ["bug", "infrastructure"]},
+    ]
+    assert "labels=" not in calls[0]
+
+
+def test_new_issue_wakes_on_untriaged_issue(monkeypatch, capsys, poll):
+    fake_gh(monkeypatch, poll, [], [], [], [issue(60)])
+    sleeps = []
+
+    poll.wait([("new_issue", "ready")], sleep=sleeps.append)
+
+    assert sleeps == [poll.INTERVAL_SECONDS]
+    assert events(capsys) == [
+        {"type": "untriaged_issue", "number": 60, "title": "Neu", "labels": []}
+    ]
+
+
+def test_next_selects_issue_with_selection_label_only(monkeypatch, capsys, poll):
+    fake_gh(monkeypatch, poll, [issue(60, "batch-1")], [issue(60, "batch-1")])
+
+    poll.main(["next", "batch-1"])
+    poll.main(["untriaged", "batch-1"])
+
+    assert [e["number"] for e in events(capsys)] == [60]
 
 
 def test_dependencies_read_relation_endpoint(monkeypatch):
@@ -259,7 +319,7 @@ def test_answers_use_cursor_per_issue_in_one_fetch(monkeypatch, capsys, poll):
 
 
 def test_wait_ends_on_first_event_of_any_target(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [], [], [], [issue(60)])
+    fake_gh(monkeypatch, poll, [], [], [], [], [issue(60)], [])
     heads = ["abc", "def"]
     monkeypatch.setattr(poll, "branch_head", lambda branch: heads.pop(0))
     targets = [
@@ -319,6 +379,8 @@ def test_main_parses_target_list(monkeypatch, poll, command):
         ["poll", "new_issue", "batch-1"],
         ["next"],
         ["next", "ready", "batch-1"],
+        ["untriaged"],
+        ["untriaged", "ready", "batch-1"],
     ],
 )
 def test_main_rejects_invalid_arguments(poll, argv):

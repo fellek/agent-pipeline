@@ -3,11 +3,13 @@
 
 `wait` polls until a target has an event, `check` polls once. `next` prints the
 issue to start: open issues with an open blocker are skipped, issues blocking an
-open issue come first, then the lowest number.
+open issue come first, then the lowest number. `untriaged` prints the open
+issues without a status label and without the selection label, for `setprio`.
 
 Usage:
   autopilot-poll.py now
   autopilot-poll.py next <label>
+  autopilot-poll.py untriaged <label>
   autopilot-poll.py wait|check <target>...
 
 Targets:
@@ -26,6 +28,7 @@ from urllib.parse import quote
 INTERVAL_SECONDS = 60
 MAX_FAILED_POLLS = 3
 SKIPPED_LABELS = {"question", "parked"}
+STATUS_LABELS = SKIPPED_LABELS | {"ready", "in-progress", "in-review", "approved"}
 TARGET_ARITY = {"answer": 2, "new_issue": 1, "patch": 2}
 
 
@@ -74,14 +77,32 @@ def label_names(issue):
     return [label["name"] for label in issue["labels"]]
 
 
+def summary(issue):
+    return {
+        "number": issue["number"],
+        "title": issue["title"],
+        "labels": label_names(issue),
+    }
+
+
 def candidates(label):
     issues = gh(f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}")
     return [
-        {"number": i["number"], "title": i["title"], "labels": label_names(i)}
+        summary(i)
         for i in issues
         if "pull_request" not in i
         and not SKIPPED_LABELS & set(label_names(i))
         and not has_open(i["number"], "blocked_by")
+    ]
+
+
+def untriaged(label):
+    issues = gh("repos/{owner}/{repo}/issues?state=open")
+    excluded = STATUS_LABELS | {label}
+    return [
+        summary(i)
+        for i in issues
+        if "pull_request" not in i and not excluded & set(label_names(i))
     ]
 
 
@@ -128,6 +149,7 @@ def poll(targets):
     for mode, *args in targets:
         if mode == "new_issue":
             events += [{"type": "labeled_issue", **i} for i in candidates(*args)]
+            events += [{"type": "untriaged_issue", **i} for i in untriaged(*args)]
         elif mode == "patch":
             events += new_commit(*args)
     return events
@@ -181,6 +203,8 @@ def main(argv):
             print(github_now())
         case ["next", label]:
             next_issue(label)
+        case ["untriaged", label]:
+            print_events(untriaged(label))
         case ["wait" | "check" as command, *args]:
             try:
                 targets = parse_targets(args)
