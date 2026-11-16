@@ -25,6 +25,7 @@ def statusline(tmp_path):
     stubs.mkdir()
     channel.mkdir(parents=True)
     shutil.copy(SCRIPTS / "autopilot-statusline.py", scripts)
+    shutil.copy(SCRIPTS / "telegram-send.py", scripts)
     curl_calls = tmp_path / "curl_calls"
     write_executable(
         stubs / "curl",
@@ -37,7 +38,6 @@ def statusline(tmp_path):
 
     class Statusline:
         pipeline = repo / ".pipeline"
-        access = channel / "access.json"
 
         @property
         def calls(self):
@@ -76,20 +76,6 @@ def test_weekly_limit_sends_one_notice(statusline):
 def test_session_limit_notice_names_session(statusline):
     statusline.run({"five_hour": window(100, WEEK_RESET)})
     assert "Session-Limit erreicht" in statusline.calls[0]
-
-
-def test_token_stays_out_of_arguments(statusline):
-    statusline.run({"seven_day": window(100, WEEK_RESET)})
-    arguments, _, config = statusline.calls[0].partition("url = ")
-    assert "secret" not in arguments
-    assert "bot" + "secret/sendMessage" in config
-
-
-def test_token_from_environment_wins(statusline):
-    statusline.run(
-        {"seven_day": window(100, WEEK_RESET)}, env={"TELEGRAM_BOT_TOKEN": "env"}
-    )
-    assert "botenv/sendMessage" in statusline.calls[0]
 
 
 def test_same_reset_is_reported_once(statusline):
@@ -138,15 +124,6 @@ def test_failed_send_is_retried(statusline, tmp_path):
     with pytest.raises(subprocess.CalledProcessError):
         statusline.run(limits)
     assert not (statusline.pipeline / "limit.json").exists()
-
-
-def test_chat_id_falls_back_to_access_file(statusline):
-    (statusline.pipeline / "state.json").write_text('{"chat_id": null}')
-    statusline.access.write_text('{"allowFrom": ["7", "8"]}')
-    statusline.run({"seven_day": window(100, WEEK_RESET)})
-    call = statusline.calls[0]
-    assert "chat_id=7" in call
-    assert "text=Wochenlimit erreicht" in call
 
 
 def test_prints_usage_of_both_windows(statusline):

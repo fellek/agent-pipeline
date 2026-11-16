@@ -8,13 +8,11 @@ timer, so it also fires while a request waits for a limit to reset.
 
 import datetime
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 PIPELINE = Path(__file__).parents[2] / ".pipeline"
-CHANNEL = Path.home() / ".claude" / "channels" / "telegram"
 WINDOWS = {"five_hour": ("5h", "Session-Limit"), "seven_day": ("7d", "Wochenlimit")}
 
 
@@ -35,41 +33,12 @@ def exhausted_windows(rate_limits):
     }
 
 
-def telegram_token():
-    if token := os.environ.get("TELEGRAM_BOT_TOKEN"):
-        return token
-    for line in (CHANNEL / ".env").read_text().splitlines():
-        key, _, value = line.partition("=")
-        if key == "TELEGRAM_BOT_TOKEN":
-            return value.strip()
-    raise SystemExit("Telegram token is missing")
-
-
-def telegram_chat_id(state):
-    return state.get("chat_id") or read_json(CHANNEL / "access.json")["allowFrom"][0]
-
-
-def notify(text, state):
-    # The token goes through stdin so it stays out of the process list.
-    config = f'url = "https://api.telegram.org/bot{telegram_token()}/sendMessage"\n'
+def notify(text):
     subprocess.run(
-        [
-            "curl",
-            "--silent",
-            "--fail",
-            "--max-time",
-            "5",
-            "--config",
-            "-",
-            "--data-urlencode",
-            f"chat_id={telegram_chat_id(state)}",
-            "--data-urlencode",
-            f"text={text}",
-        ],
-        input=config,
+        [Path(__file__).with_name("telegram-send.py")],
+        input=text,
         text=True,
         check=True,
-        stdout=subprocess.DEVNULL,
     )
 
 
@@ -90,7 +59,7 @@ def main():
     state = read_json(PIPELINE / "state.json")
     for name, resets_at in exhausted.items():
         if reported.get(name) != resets_at:
-            notify(notice(state, name, resets_at), state)
+            notify(notice(state, name, resets_at))
             reported[name] = resets_at
     if not reported:
         limit_file.unlink(missing_ok=True)

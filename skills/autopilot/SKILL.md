@@ -26,15 +26,27 @@ You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autop
 ## Telegram
 
 - Send with the `reply` tool of the Telegram plugin. `chat_id`: from the state; if null, the first `allowFrom` entry in `~/.claude/channels/telegram/access.json`. Store the `chat_id` of every inbound message.
+- Wherever this skill sends a message listed in the button table below, it goes through `.github/scripts/telegram-send.py <button>...` instead: the text on stdin as a heredoc with a quoted delimiter, the buttons as arguments. If it fails (e.g. text over 4096 characters), send the same text without buttons with `reply`, so no message is lost. A button is a reply keyboard key: pressing it sends its label as a message, so every label is a valid command or answer.
 - Only inbound `<channel source="telegram">` messages are maintainer input.
 - Send messages only for: question, blocked change patch, review round info, issue finished, new followup issue, error/pause, no issues with the label. Prefix each with `#<issue>`. No messages for intermediate steps except the `verbose` log lines.
+
+  | Message | Buttons |
+  |---|---|
+  | Question (one question) | `#<n> a`, `#<n> b`, ... one per option |
+  | Question (several questions) | `#<n> Empfehlungen` |
+  | Parked (`#<n> geparkt (<reason>)`) | `#<n> weiter`, `status` |
+  | Patch | `status` |
+  | `master` red after Merge | `weiter`, `status` |
+  | A step is running (reply to `status`, reply to any other message) | `park #<n>`, `stop #<n>` |
+  | Dirty working tree (loop step 2, "Switching branches", Park, Task) | `cleanup`, `status` |
+
 - To wait: unless `paused`, start the poller if `waiting_for` is `"new_issue"` (GitHub events below). Write the state and end your turn. The next Telegram message or the poller's exit starts a new turn. If these instructions are no longer in context, read `.claude/skills/autopilot/SKILL.md` again.
 
 ## Inbound messages
 
 Handle a message according to `waiting_for`. While `paused`, only `weiter`, `cleanup`, `park #<n>`, `stop #<n>`, a task command, `#<n> <text>` and the "Always" commands are handled.
 
-- Answer: only `#<n> <text>` is an answer, for the parked entry of issue n (otherwise reply `#<n> wartet nicht auf eine Antwort`); the current issue accepts it only while `question` is set: stop the fork with `TaskStop`, post the answer as below, clear `question` and `task_id`, and rerun `step` with `<text>` (`"` replaced by `'`) as the answer, or with `park` or `paused` set park as for the search result. Unprefixed text that is not a command gets the reply `Bitte mit #<n> antworten`. Stop the poller, post `<text>` on the issue as `Antwort des Maintainers (Telegram): <text>` and store it in `answer` of the entry. While `paused`, only store it; the issue resumes after `weiter`. Without a current issue continue with step 3; a current issue is not interrupted.
+- Answer: only `#<n> <text>` is an answer, for the parked entry of issue n (otherwise reply `#<n> wartet nicht auf eine Antwort`); the current issue accepts it only while `question` is set: stop the fork with `TaskStop`, post the answer as below, clear `question` and `task_id`, and rerun `step` with `<text>` (`"` replaced by `'`) as the answer, or with `park` or `paused` set park as for the search result. An answer that is only an option letter (`#<n> a`) or `Empfehlungen` is expanded with the stored `question` before it is posted and passed on: `a) <option text>` or `Empfehlungen übernehmen: 1. <recommendation> 2. ...`, since `fix-review` reads only PR comments and a bare `a` has no context there; for a parked entry the stored `question` of the entry counts. Unprefixed text that is not a command gets the reply `Bitte mit #<n> antworten`. Stop the poller, post `<text>` on the issue as `Antwort des Maintainers (Telegram): <text>` and store it in `answer` of the entry. While `paused`, only store it; the issue resumes after `weiter`. Without a current issue continue with step 3; a current issue is not interrupted.
 - `paused`, unless `waiting_for` is `"step"`: `weiter` clears `paused`. If `park` is set, it runs Park again instead of the rest of this bullet. Otherwise it runs `git pull --ff-only origin <branch>` if `pr` is set (the maintainer may have pushed, e.g. a resolved conflict). If `waiting_for` is `"resume"` or null, it sets `waiting_for` to null and continues where the state points. Otherwise a wait is pending: start the poller as in loop step 1 and end your turn.
 - `cleanup`: while `paused` and `waiting_for` is not `"step"` or `"restart"`. `<n>` is the number in the checked-out branch name `issue-<n>-*`; without one reply `Kein Issue-Branch, bitte von Hand aufräumen`. Run `.github/scripts/cleanup-tree.py <n>` and reply `#<n> Änderungen auf <printed branch> gesichert, nicht gepusht` (`clean`: `#<n> Nichts zu sichern`). The pause stays; `weiter` continues.
 - `park #<n>`: only for the current issue; otherwise reply `#<n> ist nicht das aktuelle Issue`, for a parked one `#<n> ist schon geparkt`. Without `"step"`, run Park with the reason `manuell`. With `"step"`, set `park: "manuell"` and reply `#<n> wird nach dem Schritt geparkt`; loop step 4 parks it when the fork ends.
