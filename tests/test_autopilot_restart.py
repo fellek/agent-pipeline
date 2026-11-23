@@ -2,7 +2,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
 IS_ACTIVE = "systemctl --user is-active --quiet autopilot\n"
 RESET_FAILED = "systemctl --user reset-failed autopilot\n"
@@ -15,7 +15,7 @@ def run_restart(tmp_path):
     scripts.mkdir()
     stubs.mkdir()
     for script in ("autopilot-restart.sh", "autopilot-stop.sh"):
-        shutil.copy(SCRIPTS / script, scripts)
+        shutil.copy(script_path(script), scripts)
     calls = tmp_path / "calls"
     write_executable(stubs / "tmux", f'echo "tmux $*" >> {calls}')
 

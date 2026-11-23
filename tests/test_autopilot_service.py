@@ -2,7 +2,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
 
 @pytest.fixture
@@ -11,7 +11,7 @@ def run_service(tmp_path):
     stubs = tmp_path / "bin"
     scripts.mkdir()
     stubs.mkdir()
-    shutil.copy(SCRIPTS / "autopilot-service.sh", scripts)
+    shutil.copy(script_path("autopilot-service.sh"), scripts)
     write_executable(stubs / "sleep", "exit 0")
     checks = tmp_path / "checks"
 

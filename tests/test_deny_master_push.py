@@ -2,9 +2,9 @@ import json
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, load_script
+from conftest import load_script, script_path
 
-SCRIPT = SCRIPTS / "deny-master-push.py"
+SCRIPT = script_path("deny-master-push.py")
 
 
 @pytest.fixture(scope="module")
