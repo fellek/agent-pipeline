@@ -2,7 +2,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
 
 @pytest.fixture
@@ -13,7 +13,7 @@ def run_status(tmp_path):
     scripts.mkdir(parents=True)
     (repo / ".pipeline").mkdir()
     stubs.mkdir()
-    shutil.copy(SCRIPTS / "autopilot-status.sh", scripts)
+    shutil.copy(script_path("autopilot-status.sh"), scripts)
     for cmd in ("tmux", "systemctl"):
         write_executable(stubs / cmd, "exit 1")
 

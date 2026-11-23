@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-CLAUDE = Path(__file__).parents[1] / ".claude"
+ROOT = Path(__file__).parents[1]
 
 
 def frontmatter(path):
@@ -12,13 +12,13 @@ def frontmatter(path):
 
 FORKS_AND_COMMANDS = [
     path
-    for path in sorted(CLAUDE.glob("skills/*/SKILL.md"))
+    for path in sorted(ROOT.glob("skills/*/SKILL.md"))
     if frontmatter(path).get("context") == "fork"
-] + sorted(CLAUDE.glob("commands/*.md"))
+] + sorted(ROOT.glob("commands/*.md"))
 
 
 @pytest.mark.parametrize(
-    "path", FORKS_AND_COMMANDS, ids=lambda p: str(p.relative_to(CLAUDE))
+    "path", FORKS_AND_COMMANDS, ids=lambda p: str(p.relative_to(ROOT))
 )
 def test_declares_model_and_effort(path):
     assert {"model", "effort"} <= frontmatter(path).keys()
@@ -29,9 +29,9 @@ def test_declares_model_and_effort(path):
     ["plan-issue", "issue", "review-issue", "fix-review", "find-answer", "setprio"],
 )
 def test_step_skills_run_in_background(skill):
-    assert frontmatter(CLAUDE / "skills" / skill / "SKILL.md")["background"] == "true"
+    assert frontmatter(ROOT / "skills" / skill / "SKILL.md")["background"] == "true"
 
 
 @pytest.mark.parametrize("skill", ["issue", "review-issue", "fix-review"])
 def test_step_skills_create_followup_issues(skill):
-    assert "followup" in (CLAUDE / "skills" / skill / "SKILL.md").read_text()
+    assert "followup" in (ROOT / "skills" / skill / "SKILL.md").read_text()

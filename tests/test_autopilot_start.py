@@ -3,7 +3,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
 
 @pytest.fixture
@@ -12,7 +12,7 @@ def run_start(tmp_path):
     stubs = tmp_path / "bin"
     scripts.mkdir(parents=True)
     stubs.mkdir()
-    shutil.copy(SCRIPTS / "autopilot-start.sh", scripts)
+    shutil.copy(script_path("autopilot-start.sh"), scripts)
     tmux_args = tmp_path / "tmux_args"
     write_executable(
         stubs / "tmux",

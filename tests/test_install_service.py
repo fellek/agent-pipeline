@@ -1,11 +1,10 @@
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
-UNIT = Path(__file__).parents[1] / "deploy" / "autopilot.service"
+UNIT = script_path("autopilot.service")
 
 
 @pytest.fixture
@@ -13,7 +12,7 @@ def install(tmp_path):
     repo = tmp_path / "repo"
     (repo / ".github" / "scripts").mkdir(parents=True)
     (repo / "deploy").mkdir()
-    shutil.copy(SCRIPTS / "install-service.sh", repo / ".github" / "scripts")
+    shutil.copy(script_path("install-service.sh"), repo / ".github" / "scripts")
     shutil.copy(UNIT, repo / "deploy")
     stubs = tmp_path / "bin"
     stubs.mkdir()

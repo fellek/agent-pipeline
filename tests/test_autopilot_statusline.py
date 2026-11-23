@@ -4,7 +4,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
 WEEK_RESET = datetime.datetime(2026, 11, 20, 4, 0, tzinfo=datetime.UTC)
 NEXT_WEEK_RESET = WEEK_RESET + datetime.timedelta(days=7)
@@ -24,8 +24,8 @@ def statusline(tmp_path):
     (repo / ".pipeline").mkdir()
     stubs.mkdir()
     channel.mkdir(parents=True)
-    shutil.copy(SCRIPTS / "autopilot-statusline.py", scripts)
-    shutil.copy(SCRIPTS / "telegram-send.py", scripts)
+    shutil.copy(script_path("autopilot-statusline.py"), scripts)
+    shutil.copy(script_path("telegram-send.py"), scripts)
     curl_calls = tmp_path / "curl_calls"
     write_executable(
         stubs / "curl",

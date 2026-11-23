@@ -41,6 +41,6 @@ def test_command_section_fits_one_telegram_message():
 
 
 def test_orchestrator_answers_help_from_command_section():
-    skill = (ROOT / ".claude" / "skills" / "autopilot" / "SKILL.md").read_text()
+    skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
     assert f"`help` replies with the section `{HEADING}`" in skill
     assert skill.count("`help`") >= 3

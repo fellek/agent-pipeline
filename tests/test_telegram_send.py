@@ -3,7 +3,7 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import SCRIPTS, write_executable
+from conftest import script_path, write_executable
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def telegram(tmp_path):
     (repo / ".pipeline").mkdir()
     stubs.mkdir()
     channel.mkdir(parents=True)
-    shutil.copy(SCRIPTS / "telegram-send.py", scripts)
+    shutil.copy(script_path("telegram-send.py"), scripts)
     arguments_file = tmp_path / "curl_arguments"
     config_file = tmp_path / "curl_config"
     write_executable(
