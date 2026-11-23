@@ -1,0 +1,46 @@
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).parents[1]
+TELEGRAM_MESSAGE_LIMIT = 4096
+COMMANDS = [
+    "help",
+    "status",
+    "pause",
+    "weiter",
+    "cleanup",
+    "park #<n>",
+    "stop #<n>",
+    "/verbose",
+    "label <name>",
+    "#<n> <text>",
+    "/<task> <n>",
+    "plan-issue",
+    "issue",
+    "review-issue",
+    "fix-review",
+]
+HEADING = "## Telegram-Befehle"
+
+
+def command_section():
+    text = (ROOT / "docs" / "autopilot.md").read_text()
+    return re.search(
+        rf"^{HEADING}\n(.*?)(?=^## |\Z)", text, re.DOTALL | re.MULTILINE
+    ).group(0)
+
+
+def test_command_section_lists_every_command():
+    section = command_section()
+    for command in COMMANDS:
+        assert f"`{command}`" in section
+
+
+def test_command_section_fits_one_telegram_message():
+    assert len(command_section()) < TELEGRAM_MESSAGE_LIMIT
+
+
+def test_orchestrator_answers_help_from_command_section():
+    skill = (ROOT / ".claude" / "skills" / "autopilot" / "SKILL.md").read_text()
+    assert f"`help` replies with the section `{HEADING}`" in skill
+    assert skill.count("`help`") >= 3
