@@ -9,9 +9,14 @@ SCRIPT_DIRS = ("bin", "host", "hooks")
 
 
 def script_path(filename):
-    return next(
+    matches = [
         path for folder in SCRIPT_DIRS if (path := ROOT / folder / filename).exists()
-    )
+    ]
+    if not matches:
+        raise FileNotFoundError(f"{filename} not in {', '.join(SCRIPT_DIRS)}")
+    if len(matches) > 1:
+        raise RuntimeError(f"{filename} is ambiguous: {', '.join(map(str, matches))}")
+    return matches[0]
 
 
 def load_script(filename):
@@ -46,6 +51,7 @@ def git_identity(monkeypatch):
         "GIT_COMMITTER_NAME": "t",
         "GIT_COMMITTER_EMAIL": "t@t",
         "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
     }.items():
         monkeypatch.setenv(key, value)
 
@@ -67,9 +73,16 @@ def run_main(script, capsys, *argv):
     try:
         script.main(list(argv))
         code = 0
-    except SystemExit as exit:
-        code = exit.code
+    except SystemExit as error:
+        code = exit_status(error.code)
     return capsys.readouterr().out.strip(), code
+
+
+def exit_status(code):
+    """Map a SystemExit code to the process exit status, as the interpreter does."""
+    if code is None:
+        return 0
+    return code if isinstance(code, int) else 1
 
 
 def write_executable(path, body):
