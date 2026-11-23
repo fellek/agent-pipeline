@@ -2,7 +2,7 @@
 description: Search the project for the answer to an open question of a GitHub issue without posting anything
 argument-hint: <issue-number> <questions> [unused]
 context: fork
-agent: reviewer
+agent: pipeline:reviewer
 background: true
 model: sonnet
 effort: medium

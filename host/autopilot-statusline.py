@@ -35,7 +35,7 @@ def exhausted_windows(rate_limits):
 
 def notify(text):
     subprocess.run(
-        [Path(__file__).with_name("telegram-send.py")],
+        [Path(__file__).parents[1] / "bin" / "telegram-send.py"],
         input=text,
         text=True,
         check=True,

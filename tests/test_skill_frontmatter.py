@@ -1,25 +1,20 @@
 from pathlib import Path
 
 import pytest
+from conftest import frontmatter
 
 ROOT = Path(__file__).parents[1]
 
 
-def frontmatter(path):
-    lines = path.read_text().split("---\n")[1].splitlines()
-    return dict(line.split(": ", 1) for line in lines)
-
-
-FORKS_AND_COMMANDS = [
+# The autopilot runs in the session's own model; every other skill pins its own.
+PINNED = [
     path
     for path in sorted(ROOT.glob("skills/*/SKILL.md"))
-    if frontmatter(path).get("context") == "fork"
-] + sorted(ROOT.glob("commands/*.md"))
+    if path.parent.name != "autopilot"
+]
 
 
-@pytest.mark.parametrize(
-    "path", FORKS_AND_COMMANDS, ids=lambda p: str(p.relative_to(ROOT))
-)
+@pytest.mark.parametrize("path", PINNED, ids=lambda p: str(p.relative_to(ROOT)))
 def test_declares_model_and_effort(path):
     assert {"model", "effort"} <= frontmatter(path).keys()
 

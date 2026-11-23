@@ -2,7 +2,7 @@
 description: Post an implementation plan for a GitHub issue without changing code
 argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
-agent: reviewer
+agent: pipeline:reviewer
 background: true
 model: opus
 effort: high

@@ -1,0 +1,10 @@
+{
+  "name": "pipeline",
+  "version": "0.1.0",
+  "description": "Issue driven agent pipeline: plans, implements, reviews and merges GitHub issues, unattended via an autopilot reachable over Telegram",
+  "author": {
+    "name": "fellek"
+  },
+  "repository": "https://github.com/fellek/agent-pipeline",
+  "license": "MIT"
+}

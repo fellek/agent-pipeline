@@ -16,7 +16,7 @@ run() {
 control=$(run "Write the codeword with: printf '%s\n' '<codeword>' > $out")
 [ "$control" = "$codeword" ] || { echo "FAIL: control run wrote '$control'"; exit 1; }
 
-case "$(run /fork-check)" in
+case "$(run /pipeline:fork-check)" in
   "$codeword") echo "FAIL: forked skill sees the conversation"; exit 1 ;;
   NONE) echo "OK: forked skill is isolated" ;;
   *) echo "FAIL: unexpected result in $out"; exit 1 ;;

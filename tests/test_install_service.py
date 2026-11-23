@@ -9,11 +9,10 @@ UNIT = script_path("autopilot.service")
 
 @pytest.fixture
 def install(tmp_path):
-    repo = tmp_path / "repo"
-    (repo / ".github" / "scripts").mkdir(parents=True)
-    (repo / "deploy").mkdir()
-    shutil.copy(script_path("install-service.sh"), repo / ".github" / "scripts")
-    shutil.copy(UNIT, repo / "deploy")
+    host = tmp_path / "plugin" / "host"
+    host.mkdir(parents=True)
+    shutil.copy(script_path("install-service.sh"), host)
+    shutil.copy(UNIT, host)
     stubs = tmp_path / "bin"
     stubs.mkdir()
     write_executable(stubs / "systemctl", "exit 0")
@@ -21,7 +20,7 @@ def install(tmp_path):
 
     def run(*args, check=True):
         result = subprocess.run(
-            [str(repo / ".github" / "scripts" / "install-service.sh"), *args],
+            [str(host / "install-service.sh"), *args],
             env={
                 "PATH": f"{stubs}:/usr/bin:/bin",
                 "XDG_CONFIG_HOME": str(config),

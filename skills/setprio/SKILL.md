@@ -2,7 +2,7 @@
 description: Check one GitHub issue without a status label and decide whether it is ready for the pipeline
 argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
-agent: reviewer
+agent: pipeline:reviewer
 background: true
 model: opus
 effort: medium
