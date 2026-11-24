@@ -33,12 +33,12 @@ def repo_on(path, branch, default):
 
 
 @pytest.fixture
-def issue_repo(tmp_path, default_branch):
+def issue_repo(tmp_path, git_identity, default_branch):
     return repo_on(tmp_path / "issue", "issue-64-x", default_branch)
 
 
 @pytest.fixture
-def default_repo(tmp_path, default_branch):
+def default_repo(tmp_path, git_identity, default_branch):
     return repo_on(tmp_path / "default", default_branch, default_branch)
 
 
