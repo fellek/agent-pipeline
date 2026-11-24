@@ -322,3 +322,96 @@ def test_hook_exit_code(issue_repo, default_branch, command, exit_code, message)
     )
     assert result.returncode == exit_code
     assert result.stderr.startswith(message)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "{{ git push origin {default}; }}",
+        "if true; then git push origin {default}; fi",
+        "if git push origin {default}; then :; fi",
+        "while true; do git push origin {default}; done",
+        "! git push origin {default}",
+        "echo `git push origin {default}`",
+        'echo "$(git push origin {default})"',
+        'x="`git push origin {default}`"',
+        "bash -c 'git push origin {default}'",
+        "/bin/sh -e -c 'cd {default_repo} && git push'",
+        "eval git push origin {default}",
+        "exec git push origin {default}",
+        "env -u FOO git push origin {default}",
+        "sudo -u root git push origin {default}",
+        "time -p git push origin {default}",
+        "env -i -u FOO HOME=/x git push origin {default}",
+        "pushd {default_repo} && git push",
+        "git -c push.default=matching push origin",
+        "git -c remote.origin.push=HEAD:{default} push origin",
+        "git --config-env=push.default=MODE push origin",
+        (
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=push.default"
+            " GIT_CONFIG_VALUE_0=matching git push origin"
+        ),
+    ],
+)
+def test_push_in_shell_constructs_and_config_overrides_is_blocked(
+    hook, issue_repo, default_repo, default_branch, monkeypatch, command
+):
+    monkeypatch.setenv("MODE", "matching")
+    command = command.format(default=default_branch, default_repo=default_repo)
+    assert hook.is_blocked(command, issue_repo) == hook.DEFAULT_BRANCH
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "{ git push origin issue-64-x; }",
+        "if true; then git push origin issue-64-x; fi",
+        "bash -c 'git push origin issue-64-x'",
+        'echo "$(git log)"',
+        "sudo -u root git status",
+        "git -c push.default=simple push origin",
+        "GIT_TRACE=1 git push origin",
+    ],
+)
+def test_other_shell_constructs_are_allowed(hook, issue_repo, command):
+    assert hook.is_blocked(command, issue_repo) is None
+
+
+def test_aliases_are_expanded(hook, issue_repo, default_branch):
+    git(issue_repo, "config", "alias.p", "push")
+    git(issue_repo, "config", "alias.pp", "p origin")
+    git(issue_repo, "config", "alias.sp", f"!git push origin {default_branch}")
+    git(issue_repo, "config", "alias.st", "status")
+    assert hook.is_blocked(f"git p origin {default_branch}", issue_repo)
+    assert hook.is_blocked(f"git pp {default_branch}", issue_repo)
+    assert hook.is_blocked("git sp", issue_repo)
+    assert not hook.is_blocked("git p origin issue-64-x", issue_repo)
+    assert not hook.is_blocked("git st", issue_repo)
+
+
+@pytest.mark.parametrize(
+    ("refspec", "blocked"),
+    [
+        ("refs/heads/issue-64-x:refs/heads/{default}", True),
+        ("+refs/heads/issue-*:refs/heads/{default}", True),
+        ("refs/heads/*:refs/heads/review/*", False),
+        # git maps only configured sources written as full refs.
+        ("HEAD:refs/heads/{default}", False),
+        ("issue-64-x:{default}", False),
+    ],
+)
+def test_refspec_without_destination_follows_remote_push_config(
+    hook, issue_repo, default_branch, refspec, blocked
+):
+    git(
+        issue_repo,
+        "config",
+        "remote.origin.push",
+        refspec.format(default=default_branch),
+    )
+    for command in (
+        "git push origin issue-64-x",
+        "git push origin refs/heads/issue-64-x",
+    ):
+        assert bool(hook.is_blocked(command, issue_repo)) is blocked
+    assert not hook.is_blocked("git push origin issue-64-x:issue-64-x", issue_repo)
