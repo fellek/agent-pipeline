@@ -9,7 +9,8 @@ fail() { echo "use-release: $*" >&2; exit 1; }
 [[ $# -eq 1 && -n $1 ]] || fail "usage: use-release.sh <tag>"
 tag=refs/tags/$1
 [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ] || fail "run it in the repository root"
-git fetch --quiet origin "+$tag:$tag" || fail "no tag $1 on origin"
+# git's own message tells a missing tag from a network or auth error.
+git fetch --quiet origin "+$tag:$tag" || fail "fetching tag $1 from origin failed, see above"
 
 common_dir() { git -C "$1" rev-parse --path-format=absolute --git-common-dir; }
 

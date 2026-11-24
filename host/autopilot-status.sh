@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-session=$("$(dirname "$0")/autopilot-name.sh")
+host=$(dirname "$0")
+# State is read from .pipeline/ of the project root.
+reason=$("$host/require-project-root.sh") || { echo "autopilot-status: $reason" >&2; exit 1; }
+session=$("$host/autopilot-name.sh")
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 running=false

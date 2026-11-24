@@ -24,6 +24,9 @@ def name(cwd):
         ("https://github.com/fellek/agent-pipeline", "autopilot-agent-pipeline"),
         ("https://github.com/fellek/agent-pipeline/", "autopilot-agent-pipeline"),
         ("https://github.com/fellek/my.site.git", "autopilot-my-site"),
+        ("git@example.com:app.git", "autopilot-app"),
+        ("example.com:app", "autopilot-app"),
+        ("/srv/git/app.git/", "autopilot-app"),
     ],
 )
 def test_name_from_origin_url(tmp_path, origin, expected):

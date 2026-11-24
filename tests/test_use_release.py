@@ -66,7 +66,20 @@ def test_unknown_tag_creates_no_worktree(releases):
     result = use_release(clone, "v9")
 
     assert result.returncode == 1
-    assert "no tag v9" in result.stderr
+    assert "fetching tag v9 from origin failed" in result.stderr
+    assert "refs/tags/v9" in result.stderr
+    assert not (clone / WORKTREE).exists()
+
+
+def test_unreachable_origin_shows_git_error(releases, tmp_path):
+    clone, _ = releases
+    git(clone, "remote", "set-url", "origin", str(tmp_path / "missing"))
+
+    result = use_release(clone, "v1")
+
+    assert result.returncode == 1
+    assert "does not appear to be a git repository" in result.stderr
+    assert "fetching tag v1 from origin failed" in result.stderr
     assert not (clone / WORKTREE).exists()
 
 
