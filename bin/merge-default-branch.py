@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Merge the default branch of origin into the current branch without pushing.
 
-Prints `current`, `merged` or `conflict`; exits 1 on conflict.
+Prints `current`, `merged` or `conflict`; exits 1 on conflict. If the default
+branch cannot be determined, prints the error of default-branch.py to stderr and
+exits 2.
 
 Usage:
   merge-default-branch.py
@@ -23,9 +25,13 @@ def succeeds(*args):
 
 
 def default_branch():
-    return subprocess.run(
-        [DEFAULT_BRANCH], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    result = subprocess.run(
+        [DEFAULT_BRANCH], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        print(result.stderr.strip(), file=sys.stderr)
+        sys.exit(2)
+    return result.stdout.strip()
 
 
 def merge_default_branch():

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Print the default branch of origin, read from origin/HEAD.
 
-If origin/HEAD is not set, it is set from the remote first.
+If origin/HEAD is not set or points to a branch that no longer exists (after the
+default branch was renamed and the clone pruned), it is set from the remote first.
 
 Usage:
   default-branch.py
@@ -18,6 +19,8 @@ def git(*args):
 
 
 def origin_head():
+    if git("rev-parse", "--verify", "--quiet", ORIGIN_HEAD).returncode != 0:
+        return None
     ref = git("symbolic-ref", "--quiet", "--short", ORIGIN_HEAD)
     return ref.stdout.strip().removeprefix("origin/") if ref.returncode == 0 else None
 

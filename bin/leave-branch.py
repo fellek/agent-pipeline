@@ -2,8 +2,8 @@
 """Check that a branch can be left and push its commits that are not on origin.
 
 Prints `dirty` (exit 1) for a modified working tree, `pushed` or `clean`;
-a failed fetch or push prints `push failed: <error>` (exit 2). Never pushes the
-default branch.
+a failed fetch or push, or a default branch that cannot be determined, prints
+`push failed: <error>` (exit 2). Never pushes the default branch.
 
 Usage:
   leave-branch.py <branch>
@@ -21,9 +21,13 @@ def git(*args, check=False):
 
 
 def default_branch():
-    return subprocess.run(
-        [DEFAULT_BRANCH], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    """(default branch, None), or (None, error of default-branch.py)."""
+    result = subprocess.run(
+        [DEFAULT_BRANCH], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        return None, result.stderr.strip()
+    return result.stdout.strip(), None
 
 
 def has_unpushed_commits(branch):
@@ -34,7 +38,10 @@ def has_unpushed_commits(branch):
 def leave(branch):
     if git("status", "--porcelain").stdout:
         return "dirty", 1
-    if branch == default_branch():
+    default, error = default_branch()
+    if error is not None:
+        return f"push failed: {error}", 2
+    if branch == default:
         return "clean", 0
     fetch = git("fetch", "origin")
     if fetch.returncode != 0:

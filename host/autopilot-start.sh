@@ -7,11 +7,19 @@ channel=plugin:telegram@claude-plugins-official
 min_claude=2.1.239
 label=${1:-ready}
 
+fail() { echo "$session: $*, see ${host%/host}/docs/autopilot.md" >&2; exit 1; }
+
+# State lives in .pipeline/ of the project root; a subdirectory would get its own.
+[ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ] \
+  || fail "run it in the project root"
+
 if tmux has-session -t "=$session" 2>/dev/null; then
   exec "$host/autopilot-status.sh"
 fi
 
-fail() { echo "$session: $*, see ${host%/host}/docs/autopilot.md" >&2; exit 1; }
+# Versions with one instance per host named the session "autopilot".
+! tmux has-session -t "=autopilot" 2>/dev/null \
+  || fail "the old session autopilot is running, replace it with install-service.sh"
 
 [ $# -le 1 ] && [[ $label =~ ^[^[:space:]]+$ ]] || fail "label must not contain whitespace"
 

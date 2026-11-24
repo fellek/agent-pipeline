@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """PreToolUse hook: blocks Bash commands that push to the default branch (exit 2).
 
-The default branch is read from origin/HEAD of the repository the push runs in;
-a push is blocked if it cannot be determined.
+The default branch is read locally, without a network call, from
+refs/remotes/<remote>/HEAD of the remote pushed to, in the repository the push runs
+in. If that ref is not set or points to a deleted branch, main, master and the
+deleted branch are protected.
 """
 
 import json
@@ -10,9 +12,8 @@ import os
 import shlex
 import subprocess
 import sys
-from pathlib import Path
 
-DEFAULT_BRANCH = Path(__file__).resolve().parents[1] / "bin" / "default-branch.py"
+FALLBACK_BRANCHES = {"main", "master"}
 SEPARATOR_CHARS = set("();<>|&\n")
 GIT_OPTIONS_WITH_VALUE = {
     "-C",
@@ -45,24 +46,25 @@ def segments(tokens):
     yield segment
 
 
-def current_branch(cwd):
-    result = subprocess.run(
-        ["git", "-C", cwd, "symbolic-ref", "--short", "-q", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
+def git(cwd, *args):
+    return subprocess.run(
+        ["git", "-C", cwd, *args], check=False, capture_output=True, text=True
     )
-    return result.stdout.strip()
 
 
-def default_branch(cwd):
-    try:
-        result = subprocess.run(
-            [DEFAULT_BRANCH], cwd=cwd, check=False, capture_output=True, text=True
-        )
-    except OSError:
-        return None
-    return result.stdout.strip() if result.returncode == 0 else None
+def current_branch(cwd):
+    return git(cwd, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+
+
+def protected_branches(cwd, remote):
+    head = f"refs/remotes/{remote}/HEAD"
+    ref = git(cwd, "symbolic-ref", "--quiet", head)
+    target = ref.stdout.strip().removeprefix(f"refs/remotes/{remote}/")
+    if ref.returncode != 0:
+        return FALLBACK_BRANCHES
+    if git(cwd, "rev-parse", "--verify", "--quiet", head).returncode != 0:
+        return FALLBACK_BRANCHES | {target}
+    return {target}
 
 
 def destination(refspec, cwd):
@@ -95,18 +97,16 @@ def pushes_to_default_branch(push_args, cwd):
             next(args, None)
         elif not arg.startswith("-"):
             positional.append(arg)
-    protected = default_branch(cwd)
-    if protected is None:
-        return True
+    protected = protected_branches(cwd, positional[0] if positional else "origin")
     refspecs = positional[1:]
     if not refspecs:
-        return current_branch(cwd) == protected
+        return current_branch(cwd) in protected
     return any(targets(destination(refspec, cwd), protected) for refspec in refspecs)
 
 
 def targets(target, protected):
     # An empty target is the matching refspec ":", a glob may expand to any branch.
-    return target in ("", protected) or "*" in target
+    return target == "" or target in protected or "*" in target
 
 
 def is_blocked(command, cwd):
@@ -137,7 +137,8 @@ def main():
     if is_blocked(command, hook_input.get("cwd", os.getcwd())):
         print(
             "Pushing to the default branch is not allowed; open a pull request. "
-            "If origin/HEAD is not set, run: git remote set-head origin --auto",
+            "Without <remote>/HEAD, main and master are protected; to set it, run: "
+            "git remote set-head <remote> --auto",
             file=sys.stderr,
         )
         sys.exit(2)

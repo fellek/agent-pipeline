@@ -18,6 +18,8 @@ def install(tmp_path):
     stubs.mkdir()
     calls = tmp_path / "systemctl_calls"
     write_executable(stubs / "systemctl", f'echo "$*" >> {calls}')
+    tmux_calls = tmp_path / "tmux_calls"
+    write_executable(stubs / "tmux", f'echo "$*" >> {tmux_calls}')
 
     class Install:
         host_dir = host
@@ -27,6 +29,14 @@ def install(tmp_path):
             return calls.read_text().splitlines() if calls.exists() else []
 
         @staticmethod
+        def tmux_calls():
+            return tmux_calls.read_text().splitlines() if tmux_calls.exists() else []
+
+        @staticmethod
+        def units(user="alice"):
+            return tmp_path / user / "config" / "systemd" / "user"
+
+        @staticmethod
         def run(cwd, *args, user="alice"):
             config = tmp_path / user / "config"
             result = subprocess.run(
@@ -34,6 +44,7 @@ def install(tmp_path):
                 cwd=cwd,
                 env={
                     "PATH": f"{stubs}:/usr/bin:/bin",
+                    "HOME": str(tmp_path / user),
                     "XDG_CONFIG_HOME": str(config),
                     "XDG_RUNTIME_DIR": str(tmp_path),
                 },
@@ -93,3 +104,47 @@ def test_two_instances_for_different_users(install, tmp_path):
     assert unit_settings(bob_units / "autopilot-site.service")[
         "WorkingDirectory"
     ] == str(second)
+
+
+def test_rejects_subdirectory_of_project(install, app):
+    (app / "docs").mkdir()
+    result, units = install.run(app / "docs")
+    assert result.returncode == 1
+    assert "project root" in result.stderr
+    assert not units.exists()
+
+
+def old_unit(install, project):
+    """The unit of versions with one instance per host, %h relative to the home."""
+    units = install.units()
+    units.mkdir(parents=True)
+    unit = units / "autopilot.service"
+    unit.write_text(f"[Service]\nWorkingDirectory={project}\n")
+    return unit
+
+
+def test_replaces_old_unit_and_session_of_project(install, tmp_path):
+    app = project(tmp_path / "alice" / "app", "git@github.com:o/app.git")
+    unit = old_unit(install, "%h/app")
+
+    result, units = install.run(app)
+
+    assert result.returncode == 0, result.stderr
+    assert not unit.exists()
+    assert [p.name for p in units.iterdir()] == ["autopilot-app.service"]
+    assert install.calls()[0] == "--user disable --now autopilot.service"
+    assert install.tmux_calls() == ["kill-session -t =autopilot"]
+    assert "replaced autopilot.service" in result.stdout
+
+
+def test_keeps_old_unit_of_other_project(install, app):
+    unit = old_unit(install, "%h/other")
+
+    result, units = install.run(app)
+
+    assert result.returncode == 1
+    assert "remove it first" in result.stderr
+    assert unit.exists()
+    assert [p.name for p in units.iterdir()] == ["autopilot.service"]
+    assert install.calls() == []
+    assert install.tmux_calls() == []

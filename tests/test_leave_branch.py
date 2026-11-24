@@ -117,3 +117,15 @@ def test_failed_fetch_is_reported(script, capsys, repos, tmp_path):
     output, code = run_main(script, capsys, "feature")
     assert output.startswith("push failed:")
     assert code == 2
+
+
+def test_unknown_default_branch_is_push_failure(script, capsys, repos, tmp_path):
+    _, clone = repos
+    commit(clone, "feature", "feature")
+    git(clone, "remote", "set-head", "origin", "--delete")
+    git(clone, "remote", "set-url", "origin", str(tmp_path / "missing"))
+
+    output, code = run_main(script, capsys, "feature")
+
+    assert code == 2
+    assert output.startswith("push failed: origin/HEAD is not set")

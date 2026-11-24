@@ -14,7 +14,8 @@ def run_start(tmp_path, app):
     tmux_args = tmp_path / "tmux_args"
     write_executable(
         stubs / "tmux",
-        f'[ "$1" = has-session ] && exit 1; printf "%s\\n" "$@" > {tmux_args}'
+        '[ "$1" = has-session ] && { [ "$3" = "=${RUNNING_SESSION-}" ]; exit; }; '
+        f'printf "%s\\n" "$@" > {tmux_args}'
         '; shift 6; "$@"',
     )
     effort_level = tmp_path / "effort_level"
@@ -119,3 +120,19 @@ def test_two_projects_get_separate_sessions(run_start, tmp_path):
     _, site_args, *_ = run_start(cwd=site)
     assert app_args[3] == "autopilot-app"
     assert site_args[3:6] == ["autopilot-site", "-c", str(site)]
+
+
+def test_rejects_subdirectory_of_project(run_start, app):
+    (app / "docs").mkdir()
+    result, tmux_args, *_ = run_start(cwd=app / "docs")
+    assert result.returncode == 1
+    assert "project root" in result.stderr
+    assert tmux_args == []
+    assert not (app / "docs" / ".pipeline").exists()
+
+
+def test_refuses_while_old_session_runs(run_start, app):
+    result, tmux_args, *_ = run_start(env={"RUNNING_SESSION": "autopilot"})
+    assert result.returncode == 1
+    assert "old session autopilot" in result.stderr
+    assert tmux_args == []

@@ -21,6 +21,24 @@ def test_sets_missing_origin_head_from_remote(script, capsys, repos, default_bra
     )
 
 
+def test_resets_origin_head_to_deleted_branch(script, capsys, repos, default_branch):
+    # The default branch is renamed on the remote and the clone prunes the old one.
+    upstream, clone = repos
+    git(upstream, "push", "origin", f"{default_branch}:trunk")
+    remote = git(clone, "remote", "get-url", "origin")
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
+    git(upstream, "push", "origin", "--delete", default_branch)
+    git(clone, "fetch", "--prune", "origin")
+    assert git(clone, "symbolic-ref", "refs/remotes/origin/HEAD") == (
+        f"refs/remotes/origin/{default_branch}"
+    )
+
+    assert run_main(script, capsys) == ("trunk", 0)
+    assert git(clone, "symbolic-ref", "refs/remotes/origin/HEAD") == (
+        "refs/remotes/origin/trunk"
+    )
+
+
 def test_fails_without_origin(script, tmp_path, monkeypatch, git_identity):
     git(tmp_path, "init", "-b", "main")
     monkeypatch.chdir(tmp_path)

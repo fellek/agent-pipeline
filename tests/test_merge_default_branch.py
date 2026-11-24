@@ -52,3 +52,17 @@ def test_rejects_arguments(script):
         script.main(["66"])
 
     assert exit.value.code == script.__doc__
+
+
+def test_unknown_default_branch_exits_with_error(script, capsys, repos, tmp_path):
+    _, clone = repos
+    git(clone, "remote", "set-head", "origin", "--delete")
+    git(clone, "remote", "set-url", "origin", str(tmp_path / "missing"))
+
+    with pytest.raises(SystemExit) as exit:
+        script.main([])
+
+    assert exit.value.code == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "origin/HEAD is not set" in output.err

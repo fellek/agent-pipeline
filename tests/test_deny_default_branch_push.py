@@ -12,15 +12,23 @@ def hook():
     return load_script(SCRIPT.name)
 
 
-def repo_on(path, branch, default):
-    path.mkdir()
-    git(path, "init", "-q", "-b", branch)
+def set_remote_head(path, remote, default, *, exists=True):
+    if exists:
+        empty_tree = git(path, "hash-object", "-t", "tree", "/dev/null", "-w")
+        commit = git(path, "commit-tree", "-m", "x", empty_tree)
+        git(path, "update-ref", f"refs/remotes/{remote}/{default}", commit)
     git(
         path,
         "symbolic-ref",
-        "refs/remotes/origin/HEAD",
-        f"refs/remotes/origin/{default}",
+        f"refs/remotes/{remote}/HEAD",
+        f"refs/remotes/{remote}/{default}",
     )
+
+
+def repo_on(path, branch, default):
+    path.mkdir()
+    git(path, "init", "-q", "-b", branch)
+    set_remote_head(path, "origin", default)
     return str(path)
 
 
@@ -103,12 +111,48 @@ def test_bare_push_on_default_branch_is_blocked(hook, default_repo, issue_repo):
 
 
 @pytest.mark.parametrize("cwd", ["/nonexistent", None])
-def test_push_with_unknown_default_branch_is_blocked(hook, tmp_path, cwd):
+def test_unknown_default_branch_protects_main_and_master(hook, tmp_path, cwd):
     if cwd is None:
         git(tmp_path, "init", "-q")
+        git(tmp_path, "remote", "add", "origin", str(tmp_path / "missing"))
         cwd = str(tmp_path)
-    assert hook.is_blocked("git push origin issue-64-x", cwd)
+    assert hook.is_blocked("git push origin main", cwd)
+    assert hook.is_blocked("git push origin HEAD:master", cwd)
+    assert not hook.is_blocked("git push origin issue-64-x", cwd)
     assert not hook.is_blocked("git status", cwd)
+
+
+def test_unknown_default_branch_is_not_fetched(hook, tmp_path):
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "remote", "add", "origin", str(tmp_path / "missing"))
+    hook.is_blocked("git push origin main", str(tmp_path))
+    with pytest.raises(subprocess.CalledProcessError):
+        git(tmp_path, "symbolic-ref", "refs/remotes/origin/HEAD")
+
+
+def test_stale_origin_head_protects_old_and_common_names(hook, tmp_path):
+    # origin/HEAD still points to the old default branch after a rename and prune.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "issue-64-x")
+    set_remote_head(repo, "origin", "trunk", exists=False)
+    for branch in ("trunk", "main", "master"):
+        assert hook.is_blocked(f"git push origin {branch}", str(repo))
+    assert not hook.is_blocked("git push origin issue-64-x", str(repo))
+
+
+def test_reads_default_branch_of_pushed_remote(hook, issue_repo, default_branch):
+    upstream_default = "develop"
+    set_remote_head(issue_repo, "upstream", upstream_default)
+    assert hook.is_blocked(f"git push upstream {upstream_default}", issue_repo)
+    assert not hook.is_blocked(f"git push upstream {default_branch}", issue_repo)
+    assert hook.is_blocked(f"git push origin {default_branch}", issue_repo)
+
+
+def test_remote_without_head_protects_main_and_master(hook, issue_repo):
+    assert hook.is_blocked("git push github main", issue_repo)
+    assert hook.is_blocked("git push github master", issue_repo)
+    assert not hook.is_blocked("git push github issue-64-x", issue_repo)
 
 
 @pytest.mark.parametrize(
