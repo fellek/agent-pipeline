@@ -50,7 +50,7 @@ def test_claude_md_imports_workflow_rules():
     claude_md = ROOT / ".claude" / "CLAUDE.md"
     imports = re.findall(r"^@(\S+)$", claude_md.read_text(), re.MULTILINE)
     assert [(claude_md.parent / path).resolve() for path in imports] == [
-        ROOT / "rules" / "workflow.md"
+        ROOT / ".claude" / "skills" / "pipeline" / "rules" / "workflow.md"
     ]
 
 

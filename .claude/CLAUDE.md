@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-@../rules/workflow.md
+@skills/pipeline/rules/workflow.md
 
 ## Coding style
 
