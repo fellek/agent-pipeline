@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+from fnmatch import fnmatch
 
 import pytest
 from conftest import ROOT, script_path
@@ -117,3 +118,15 @@ def test_template_rules_avoid_legacy_prefix_syntax():
     ]
     for rule in permissions["allow"] + permissions["deny"]:
         assert not rule.endswith(":*)"), rule
+
+
+def test_template_lets_the_autopilot_read_only_the_telegram_access_list():
+    # The orchestrator reads the chat_id from access.json; .env holds the bot token.
+    permissions = json.loads((TEMPLATES / "claude" / "settings.json").read_text())[
+        "permissions"
+    ]
+    denied = [r[5:-1] for r in permissions["deny"] if r.startswith("Read(")]
+    channel = "~/.claude/channels/telegram"
+    assert f"Read({channel}/access.json)" in permissions["allow"]
+    assert not any(fnmatch(f"{channel}/access.json", rule) for rule in denied)
+    assert any(fnmatch(f"{channel}/.env", rule) for rule in denied)
