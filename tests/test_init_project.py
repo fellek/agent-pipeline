@@ -13,6 +13,7 @@ COPIED = (
     ".claude/settings.json",
     ".claude/rules/project.md",
     ".github/workflows/agent-review.yml",
+    ".github/workflows/agent-review-sync.yml",
 )
 
 

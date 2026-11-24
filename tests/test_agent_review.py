@@ -81,7 +81,154 @@ def test_main_fails_without_approve(monkeypatch, gate):
     assert HEAD in str(exit_info.value.code)
 
 
-@pytest.mark.parametrize("argv", [[], ["49"], ["49", HEAD, "extra"]])
+RUN = {"databaseId": 7, "attempt": 1, "url": "https://example.test/runs/7"}
+
+
+@pytest.fixture
+def sync_gate(monkeypatch, gate):
+    monkeypatch.setattr(gate.time, "sleep", lambda seconds: None)
+    return gate
+
+
+def fake_sync_gh(monkeypatch, reviews, runs, watch_exits, attempts=(), rerun_exit=0):
+    """Fakes gh for `sync`: `attempts` are the attempts `gh run view` reports."""
+    calls = []
+    watch_exits = iter(watch_exits)
+    attempts = iter(attempts)
+
+    def run(args, **kwargs):
+        calls.append(args)
+        match args[1:3]:
+            case ["api", _]:
+                stdout = json.dumps([reviews])
+            case ["run", "list"]:
+                stdout = json.dumps(runs)
+            case ["run", "view"]:
+                stdout = json.dumps({"attempt": next(attempts)})
+            case ["run", "watch"]:
+                return subprocess.CompletedProcess(args, next(watch_exits))
+            case ["run", "rerun"]:
+                return subprocess.CompletedProcess(
+                    args, rerun_exit, stdout="", stderr="already running\n"
+                )
+        return subprocess.CompletedProcess(args, 0, stdout=stdout)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    return calls
+
+
+def commands(calls):
+    return [args[1:3] for args in calls]
+
+
+def run_sync(gate, capsys):
+    try:
+        gate.main(["sync", "49", HEAD])
+        code = 0
+    except SystemExit as exit_info:
+        code = exit_info.code
+    return code, capsys.readouterr().out
+
+
+def test_sync_lists_push_runs_of_the_head_commit(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(monkeypatch, [APPROVE], [RUN], watch_exits=[0])
+
+    assert run_sync(sync_gate, capsys) == (0, "green\n")
+    assert calls[0] == [
+        "gh",
+        "run",
+        "list",
+        "--workflow",
+        "agent-review.yml",
+        "--event",
+        "pull_request",
+        "--commit",
+        HEAD,
+        "--limit",
+        "1",
+        "--json",
+        "databaseId,attempt,url",
+    ]
+    assert calls[1] == ["gh", "run", "watch", "7", "--exit-status"]
+    assert ["run", "rerun"] not in commands(calls)
+
+
+def test_sync_reruns_red_run_after_approve(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(
+        monkeypatch, [CHANGES, APPROVE], [RUN], watch_exits=[1, 0], attempts=[1, 2]
+    )
+
+    assert run_sync(sync_gate, capsys) == (0, "green\n")
+    assert calls[3] == ["gh", "run", "rerun", "7"]
+    assert commands(calls)[4:] == [["run", "view"], ["run", "view"], ["run", "watch"]]
+
+
+def test_sync_reruns_green_run_after_changes_requested(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(
+        monkeypatch, [APPROVE, CHANGES], [RUN], watch_exits=[0, 1], attempts=[2]
+    )
+
+    assert run_sync(sync_gate, capsys) == (1, f"red {RUN['url']}\n")
+    assert ["run", "rerun"] in commands(calls)
+
+
+def test_sync_keeps_red_run_without_approve(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(monkeypatch, [CHANGES], [RUN], watch_exits=[1])
+
+    assert run_sync(sync_gate, capsys) == (1, f"red {RUN['url']}\n")
+    assert ["run", "rerun"] not in commands(calls)
+
+
+def test_sync_ignores_thread_reply_after_approve(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(monkeypatch, [APPROVE, review(body="")], [RUN], [0])
+
+    assert run_sync(sync_gate, capsys) == (0, "green\n")
+    assert ["run", "rerun"] not in commands(calls)
+
+
+def test_sync_joins_rerun_that_is_already_running(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(
+        monkeypatch,
+        [APPROVE],
+        [RUN],
+        watch_exits=[1, 0],
+        attempts=[2],
+        rerun_exit=1,
+    )
+
+    assert run_sync(sync_gate, capsys) == (0, "green\n")
+    assert commands(calls)[-1] == ["run", "watch"]
+
+
+def test_sync_fails_when_no_rerun_starts(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(
+        monkeypatch,
+        [APPROVE],
+        [RUN],
+        watch_exits=[1],
+        attempts=[1] * sync_gate.ATTEMPTS,
+        rerun_exit=1,
+    )
+
+    with pytest.raises(SystemExit):
+        sync_gate.main(["sync", "49", HEAD])
+
+    output = capsys.readouterr()
+    assert output.out == f"red {RUN['url']}\n"
+    assert "already running" in output.err
+    assert commands(calls).count(["run", "watch"]) == 1
+
+
+def test_sync_reports_missing_run(monkeypatch, capsys, sync_gate):
+    calls = fake_sync_gh(monkeypatch, [APPROVE], [], watch_exits=[])
+
+    assert run_sync(sync_gate, capsys) == (1, "missing\n")
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "argv", [[], ["49"], ["49", HEAD, "extra"], ["sync", HEAD], ["sync", "49"]]
+)
 def test_main_rejects_invalid_arguments(gate, argv):
     with pytest.raises(SystemExit):
         gate.main(argv)
