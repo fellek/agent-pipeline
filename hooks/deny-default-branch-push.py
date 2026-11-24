@@ -8,6 +8,8 @@ deleted branch are protected. A URL or path is matched against the URLs of the
 configured remotes; if none matches, the default branches of all remotes are
 protected. Without a remote, the push remote comes from the git config, and
 without a refspec, the destination follows remote.<remote>.push and push.default.
+If a push would update the current branch and that branch is unknown, e.g. after a
+cd the hook cannot follow, the push is blocked with its own message.
 """
 
 import json
@@ -29,12 +31,23 @@ GIT_OPTIONS_WITH_VALUE = {
 PUSH_OPTIONS_WITH_VALUE = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
 PUSHES_ALL_BRANCHES = {"--all", "--branches", "--mirror"}
 PREFIX_COMMANDS = {"env", "command", "time", "nohup", "sudo"}
+DEFAULT_BRANCH = (
+    "Pushing to the default branch is not allowed; open a pull request. "
+    "Without <remote>/HEAD, main and master are protected; to set it, run: "
+    "git remote set-head <remote> --auto"
+)
+UNKNOWN_BRANCH = (
+    "Cannot tell which branch this push updates: there is no current branch in {cwd} "
+    "(detached HEAD, or a directory the hook cannot follow). "
+    "Name the branch, e.g. git push origin <branch>."
+)
 
 
 def tokenize(command):
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace = " \t\r"
-    lexer.wordchars += ":+@"
+    # "$" and braces keep $VAR and ${VAR} in one word, for resolve().
+    lexer.wordchars += ":+@${}"
     return list(lexer)
 
 
@@ -109,11 +122,12 @@ def protected_branches(cwd, remote):
 
 
 def destination(refspec, cwd):
+    """The branch <refspec> updates; None if that is the unknown current branch."""
     source, _, target = refspec.lstrip("+").partition(":")
     target = target or source
     if target in ("HEAD", "@"):
-        target = current_branch(cwd)
-    return target.removeprefix("refs/heads/")
+        target = current_branch(cwd) or None
+    return target and target.removeprefix("refs/heads/")
 
 
 def implicit_destinations(remote, cwd):
@@ -125,12 +139,19 @@ def implicit_destinations(remote, cwd):
     mode = config(cwd, "push.default") or "simple"
     if mode == "matching":
         return [""]
+    if not branch:
+        return [None]
     if mode in ("upstream", "tracking") and (
         config(cwd, f"branch.{branch}.remote") == remote
     ):
         upstream = config(cwd, f"branch.{branch}.merge").removeprefix("refs/heads/")
         return [branch, upstream] if upstream else [branch]
     return [branch]
+
+
+def resolve(cwd, path):
+    # Expands what the shell would, as far as the hook's environment knows it.
+    return os.path.join(cwd, os.path.expandvars(os.path.expanduser(path)))
 
 
 def git_subcommand(args, cwd):
@@ -140,22 +161,28 @@ def git_subcommand(args, cwd):
             value = args[1] if len(args) > 1 else ""
             args = args[1:]
         if option == "-C":
-            cwd = os.path.join(cwd, value)
+            cwd = resolve(cwd, value)
         args = args[1:]
     return args, cwd
 
 
-def pushes_to_default_branch(push_args, cwd):
+def blocked_push(push_args, cwd):
+    """The reason to block `git push <push_args>` run in <cwd>, or None."""
     positional = []
+    repo_option = None
     args = iter(push_args)
     for arg in args:
+        option, has_value, value = arg.partition("=")
         if arg in PUSHES_ALL_BRANCHES:
-            return True
-        if arg in PUSH_OPTIONS_WITH_VALUE:
+            return DEFAULT_BRANCH
+        if option == "--repo":
+            repo_option = value if has_value else next(args, None)
+        elif arg in PUSH_OPTIONS_WITH_VALUE:
             next(args, None)
         elif not arg.startswith("-"):
             positional.append(arg)
-    repository = positional[0] if positional else push_remote(cwd)
+    # As in git, a repository argument takes precedence over --repo.
+    repository = positional[0] if positional else repo_option or push_remote(cwd)
     remotes = remotes_for(repository, cwd)
     if remotes:
         protected = set().union(*(protected_branches(cwd, r) for r in remotes))
@@ -173,7 +200,11 @@ def pushes_to_default_branch(push_args, cwd):
             for remote in remotes or [repository]
             for target in implicit_destinations(remote, cwd)
         ]
-    return any(targets(target, protected) for target in destinations)
+    if None in destinations:
+        return UNKNOWN_BRANCH.format(cwd=cwd)
+    if any(targets(target, protected) for target in destinations):
+        return DEFAULT_BRANCH
+    return None
 
 
 def targets(target, protected):
@@ -182,10 +213,11 @@ def targets(target, protected):
 
 
 def is_blocked(command, cwd):
+    """The reason to block <command> run in <cwd>, or None."""
     try:
         tokens = tokenize(command)
     except ValueError:
-        return "git" in command and "push" in command
+        return DEFAULT_BRANCH if "git" in command and "push" in command else None
     for segment in segments(tokens):
         while segment and (
             segment[0] in PREFIX_COMMANDS
@@ -195,24 +227,19 @@ def is_blocked(command, cwd):
         if not segment:
             continue
         if segment[0] == "cd" and len(segment) > 1:
-            cwd = os.path.join(cwd, segment[1])
+            cwd = resolve(cwd, segment[1])
         elif os.path.basename(segment[0]) == "git":
             args, git_cwd = git_subcommand(segment[1:], cwd)
-            if args[:1] == ["push"] and pushes_to_default_branch(args[1:], git_cwd):
-                return True
-    return False
+            if args[:1] == ["push"] and (reason := blocked_push(args[1:], git_cwd)):
+                return reason
+    return None
 
 
 def main():
     hook_input = json.load(sys.stdin)
     command = hook_input.get("tool_input", {}).get("command", "")
-    if is_blocked(command, hook_input.get("cwd", os.getcwd())):
-        print(
-            "Pushing to the default branch is not allowed; open a pull request. "
-            "Without <remote>/HEAD, main and master are protected; to set it, run: "
-            "git remote set-head <remote> --auto",
-            file=sys.stderr,
-        )
+    if reason := is_blocked(command, hook_input.get("cwd", os.getcwd())):
+        print(reason, file=sys.stderr)
         sys.exit(2)
 
 

@@ -155,6 +155,66 @@ def test_remote_without_head_protects_main_and_master(hook, issue_repo):
     assert not hook.is_blocked("git push github issue-64-x", issue_repo)
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd ~/issue && git push origin",
+        "cd ~/issue && git push origin HEAD",
+        "cd $PROJECT && git push -u origin",
+        "cd ${PROJECT} && git push",
+        "git -C ~/issue push origin",
+        "git -C $PROJECT push origin @",
+    ],
+)
+def test_cd_and_dash_c_expand_home_and_variables(
+    hook, tmp_path, monkeypatch, git_identity, default_branch, command
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for name, branch, reason in [
+        ("issue", "issue-64-x", None),
+        ("default", default_branch, hook.DEFAULT_BRANCH),
+    ]:
+        repo = repo_on(tmp_path / name, branch, default_branch)
+        monkeypatch.setenv("PROJECT", repo)
+        assert hook.is_blocked(command.replace("issue", name), "/") == reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git push",
+        "git push origin",
+        "git push origin HEAD",
+        "git push origin @",
+        "cd $UNSET_IN_HOOK && git push origin",
+    ],
+)
+def test_unknown_current_branch_is_blocked_with_own_message(
+    hook, issue_repo, monkeypatch, command
+):
+    # A detached HEAD, and a cd the hook cannot follow: the shell might be on the
+    # default branch, so the push is blocked, but not as a push to the default branch.
+    monkeypatch.delenv("UNSET_IN_HOOK", raising=False)
+    git(issue_repo, "switch", "-q", "--detach", "refs/remotes/origin/HEAD")
+    for cwd in (issue_repo, "/nonexistent"):
+        reason = hook.is_blocked(command, cwd)
+        assert reason and reason.startswith("Cannot tell which branch")
+    assert not hook.is_blocked("git push origin HEAD:issue-64-x", issue_repo)
+    assert hook.is_blocked("git push origin :", issue_repo) == hook.DEFAULT_BRANCH
+
+
+@pytest.mark.parametrize(
+    "command", ["git push --repo=upstream", "git push --repo upstream"]
+)
+def test_repo_option_selects_the_remote(hook, tmp_path, git_identity, command):
+    repo = repo_on(tmp_path / "repo", "develop", "main")
+    set_remote_head(repo, "upstream", "develop")
+    assert hook.is_blocked(command, repo) == hook.DEFAULT_BRANCH
+    # As in git, the repository argument takes precedence over --repo.
+    assert hook.is_blocked(f"{command} origin", repo) is None
+    assert hook.is_blocked(f"{command} upstream develop", repo) == hook.DEFAULT_BRANCH
+
+
 ORIGIN_URL = "https://github.com/o/app.git"
 
 
@@ -237,16 +297,20 @@ def test_push_without_refspec_follows_remote_push_config(
     hook, remote_repo, refspec, blocked
 ):
     git(remote_repo, "config", "remote.origin.push", refspec)
-    assert hook.is_blocked("git push", remote_repo) is blocked
-    assert hook.is_blocked("git push origin", remote_repo) is blocked
+    assert bool(hook.is_blocked("git push", remote_repo)) is blocked
+    assert bool(hook.is_blocked("git push origin", remote_repo)) is blocked
     assert not hook.is_blocked("git push origin issue-64-x", remote_repo)
 
 
 @pytest.mark.parametrize(
-    ("command", "exit_code"),
-    [("git -C {repo} push origin {default}", 2), ("git push origin issue-64-x", 0)],
+    ("command", "exit_code", "message"),
+    [
+        ("git -C {repo} push origin {default}", 2, "Pushing to the default branch"),
+        ("cd /nonexistent && git push origin", 2, "Cannot tell which branch"),
+        ("git push origin issue-64-x", 0, ""),
+    ],
 )
-def test_hook_exit_code(issue_repo, default_branch, command, exit_code):
+def test_hook_exit_code(issue_repo, default_branch, command, exit_code, message):
     command = command.format(default=default_branch, repo=issue_repo)
     hook_input = {"cwd": issue_repo, "tool_input": {"command": command}}
     result = subprocess.run(
@@ -257,3 +321,4 @@ def test_hook_exit_code(issue_repo, default_branch, command, exit_code):
         text=True,
     )
     assert result.returncode == exit_code
+    assert result.stderr.startswith(message)
