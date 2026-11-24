@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -125,3 +126,33 @@ def exit_status(code):
 def write_executable(path, body):
     path.write_text(f"#!/usr/bin/env bash\n{body}\n")
     path.chmod(0o755)
+
+
+PIPELINE_URL = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())[
+    "repository"
+]
+
+
+@pytest.fixture
+def pipeline_releases(tmp_path, monkeypatch, git_identity):
+    """Tags v1 and v2 of this working tree in a remote served at PIPELINE_URL."""
+    work, remote = tmp_path / "pipeline", tmp_path / "pipeline.git"
+    files = git(ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+    for name in filter(None, files.split("\0")):
+        if (ROOT / name).is_file():
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / name, work / name)
+    git(work, "init", "-q")
+    git(work, "add", ".")
+    git(work, "commit", "-qm", "v1")
+    git(work, "tag", "v1")
+    commit(work, "v2", "v2")
+    git(work, "tag", "v2")
+    git(tmp_path, "clone", "-q", "--bare", str(work), str(remote))
+    config = tmp_path / "gitconfig"
+    config.write_text(
+        f'[url "{remote}"]\n\tinsteadOf = {PIPELINE_URL}\n'
+        '[protocol "file"]\n\tallow = always\n'
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    return {tag: git(work, "rev-parse", tag) for tag in ("v1", "v2")}
