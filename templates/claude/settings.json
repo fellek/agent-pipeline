@@ -43,7 +43,7 @@
       "Bash(git push *--mirror*)",
       "Bash(git push *--prune*)",
       "Bash(git push *--delete*)",
-      "Bash(git push * :*)",
+      "Bash(git push * :**)",
       "Bash(git reset --hard*)",
       "Bash(git clean *)",
       "Bash(git branch -D *)",

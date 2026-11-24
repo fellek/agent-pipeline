@@ -107,3 +107,13 @@ def test_template_allows_every_plugin_command():
     ]["allow"]
     for script in (ROOT / "bin").glob("*.*"):
         assert f"Bash({script.name}*)" in allow, script.name
+
+
+def test_template_rules_avoid_legacy_prefix_syntax():
+    # Claude Code reads a trailing :* as a prefix of the text before it, so
+    # Bash(git push * :*) would only match commands that start with "git push * ".
+    permissions = json.loads((TEMPLATES / "claude" / "settings.json").read_text())[
+        "permissions"
+    ]
+    for rule in permissions["allow"] + permissions["deny"]:
+        assert not rule.endswith(":*)"), rule
