@@ -17,15 +17,16 @@ def window(percentage, reset):
 @pytest.fixture
 def statusline(tmp_path):
     repo = tmp_path / "repo"
-    scripts = repo / ".github" / "scripts"
+    scripts = repo / "pipeline" / "host"
     stubs = tmp_path / "bin"
     channel = tmp_path / "home" / ".claude" / "channels" / "telegram"
     scripts.mkdir(parents=True)
+    (repo / "pipeline" / "bin").mkdir()
     (repo / ".pipeline").mkdir()
     stubs.mkdir()
     channel.mkdir(parents=True)
     shutil.copy(script_path("autopilot-statusline.py"), scripts)
-    shutil.copy(script_path("telegram-send.py"), scripts)
+    shutil.copy(script_path("telegram-send.py"), repo / "pipeline" / "bin")
     curl_calls = tmp_path / "curl_calls"
     write_executable(
         stubs / "curl",

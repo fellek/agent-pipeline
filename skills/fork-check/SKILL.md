@@ -1,7 +1,7 @@
 ---
 description: Check that a forked skill does not see the conversation of the invoking session
 context: fork
-agent: reviewer
+agent: pipeline:reviewer
 background: false
 disable-model-invocation: true
 model: haiku

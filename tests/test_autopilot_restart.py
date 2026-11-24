@@ -10,12 +10,15 @@ RESET_FAILED = "systemctl --user reset-failed autopilot\n"
 
 @pytest.fixture
 def run_restart(tmp_path):
-    scripts = tmp_path / "scripts"
-    stubs = tmp_path / "bin"
-    scripts.mkdir()
+    plugin = tmp_path / "plugin"
+    stubs = tmp_path / "stubs"
     stubs.mkdir()
-    for script in ("autopilot-restart.sh", "autopilot-stop.sh"):
-        shutil.copy(script_path(script), scripts)
+    for folder, script in (
+        ("bin", "autopilot-restart.sh"),
+        ("host", "autopilot-stop.sh"),
+    ):
+        (plugin / folder).mkdir(parents=True)
+        shutil.copy(script_path(script), plugin / folder)
     calls = tmp_path / "calls"
     write_executable(stubs / "tmux", f'echo "tmux $*" >> {calls}')
 
@@ -25,7 +28,7 @@ def run_restart(tmp_path):
             f'echo "systemctl $*" >> {calls}; exit {service_status}',
         )
         result = subprocess.run(
-            [str(scripts / "autopilot-restart.sh")],
+            [str(plugin / "bin" / "autopilot-restart.sh")],
             env={"PATH": f"{stubs}:/usr/bin:/bin", "XDG_RUNTIME_DIR": str(tmp_path)},
             check=False,
             capture_output=True,

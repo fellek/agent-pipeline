@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+host=$(cd "$(dirname "$0")" && pwd)
 cd "$(dirname "$0")/../.."
 session=autopilot
 channel=plugin:telegram@claude-plugins-official
@@ -8,7 +9,7 @@ min_claude=2.1.239
 label=${1:-ready}
 
 if tmux has-session -t "$session" 2>/dev/null; then
-  exec .github/scripts/autopilot-status.sh
+  exec "$host/autopilot-status.sh"
 fi
 
 fail() { echo "autopilot: $*, see docs/autopilot.md" >&2; exit 1; }
@@ -28,8 +29,8 @@ claude plugin list | grep -q telegram || fail "Telegram plugin is not installed"
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"
 
 mkdir -p .pipeline
-status_line='{"statusLine":{"type":"command","command":"'"$PWD"'/.github/scripts/autopilot-statusline.py","refreshInterval":60}}'
+status_line='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-statusline.py","refreshInterval":60}}'
 # CLAUDE_CODE_EFFORT_LEVEL would override the effort set per skill.
 # The retry watchdog waits out session and weekly limits instead of opening the limit menu.
 tmux new-session -d -s "$session" -c "$PWD" env -u CLAUDE_CODE_EFFORT_LEVEL CLAUDE_CODE_RETRY_WATCHDOG=1 \
-  claude --settings "$status_line" --model sonnet --effort medium --channels "$channel" -- "/autopilot $label"
+  claude --settings "$status_line" --model sonnet --effort medium --channels "$channel" -- "/pipeline:autopilot $label"

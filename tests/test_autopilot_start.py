@@ -8,7 +8,7 @@ from conftest import script_path, write_executable
 
 @pytest.fixture
 def run_start(tmp_path):
-    scripts = tmp_path / "repo" / ".github" / "scripts"
+    scripts = tmp_path / "plugin" / "host"
     stubs = tmp_path / "bin"
     scripts.mkdir(parents=True)
     stubs.mkdir()
@@ -54,7 +54,7 @@ esac""",
 
 @pytest.mark.parametrize(
     ("args", "prompt"),
-    [((), "/autopilot ready"), (("batch-1",), "/autopilot batch-1")],
+    [((), "/pipeline:autopilot ready"), (("batch-1",), "/pipeline:autopilot batch-1")],
 )
 def test_starts_autopilot_with_label(run_start, args, prompt):
     result, tmux_args, *_ = run_start(*args)
@@ -94,6 +94,6 @@ def test_registers_status_line_for_session_only(run_start):
     assert result.returncode == 0, result.stderr
     settings = json.loads(tmux_args[tmux_args.index("--settings") + 1])
     status_line = settings["statusLine"]
-    assert status_line["command"].endswith("/.github/scripts/autopilot-statusline.py")
+    assert status_line["command"].endswith("/plugin/host/autopilot-statusline.py")
     assert status_line["command"].startswith("/")
     assert status_line["refreshInterval"] == 60

@@ -19,6 +19,11 @@ def script_path(filename):
     return matches[0]
 
 
+def frontmatter(path):
+    lines = path.read_text().split("---\n")[1].splitlines()
+    return dict(line.split(": ", 1) for line in lines)
+
+
 def load_script(filename):
     spec = importlib.util.spec_from_file_location(
         Path(filename).stem.replace("-", "_"), script_path(filename)
