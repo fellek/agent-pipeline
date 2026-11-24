@@ -30,7 +30,8 @@
       "Bash(pipeline-metrics.py*)",
       "Bash(telegram-send.py*)",
       "Bash(watch-ci.py*)",
-      "mcp__plugin_telegram_telegram"
+      "mcp__plugin_telegram_telegram",
+      "Read(~/.claude/channels/telegram/access.json)"
     ],
     "deny": [
       "Bash(git push *--force*)",
@@ -56,7 +57,7 @@
       "Bash(claude *--dangerously-skip-permissions*)",
       "Read(./.env)",
       "Read(./.env.*)",
-      "Read(~/.claude/channels/**)"
+      "Read(~/.claude/channels/**/.env)"
     ]
   }
 }
