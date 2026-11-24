@@ -8,12 +8,12 @@ from conftest import script_path, write_executable
 
 @pytest.fixture
 def telegram(tmp_path):
-    repo = tmp_path / "repo"
-    scripts = repo / ".github" / "scripts"
+    repo = tmp_path / "app"
+    scripts = tmp_path / "plugin" / "bin"
     stubs = tmp_path / "bin"
     channel = tmp_path / "home" / ".claude" / "channels" / "telegram"
     scripts.mkdir(parents=True)
-    (repo / ".pipeline").mkdir()
+    (repo / ".pipeline").mkdir(parents=True)
     stubs.mkdir()
     channel.mkdir(parents=True)
     shutil.copy(script_path("telegram-send.py"), scripts)
@@ -47,9 +47,12 @@ def telegram(tmp_path):
                 if argument == "--data-urlencode"
             )
 
-        def run(self, text, *buttons, env=None):
+        project = repo
+
+        def run(self, text, *buttons, env=None, cwd=repo):
             return subprocess.run(
                 [str(scripts / "telegram-send.py"), *buttons],
+                cwd=cwd,
                 input=text,
                 env={
                     "PATH": f"{stubs}:/usr/bin:/bin",
@@ -81,6 +84,15 @@ def test_buttons_become_one_time_reply_keyboard(telegram):
 def test_without_buttons_no_keyboard_is_sent(telegram):
     telegram.run("#7 fertig")
     assert "reply_markup" not in telegram.fields
+
+
+def test_reads_state_of_project_root_from_subdirectory(telegram):
+    subdirectory = telegram.project / "docs"
+    subdirectory.mkdir()
+    subprocess.run(["git", "init", "-q", str(telegram.project)], check=True)
+    telegram.access.write_text('{"allowFrom": ["7"]}')
+    telegram.run("x", cwd=subdirectory)
+    assert telegram.fields["chat_id"] == "42"
 
 
 def test_chat_id_falls_back_to_access_file(telegram):

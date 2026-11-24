@@ -1,12 +1,12 @@
 [Unit]
-Description=Claude Code autopilot in tmux session "autopilot"
+Description=Claude Code autopilot in tmux session "@NAME@"
 
 [Service]
 Type=simple
-WorkingDirectory=%h/klarschiff.io
+WorkingDirectory=@PROJECT@
 Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=%h/klarschiff.io/.claude/skills/pipeline/host/autopilot-service.sh ready
-ExecStop=%h/klarschiff.io/.claude/skills/pipeline/host/autopilot-stop.sh
+ExecStart=@HOST@/autopilot-service.sh @LABEL@
+ExecStop=@HOST@/autopilot-stop.sh
 Restart=on-failure
 RestartSec=30
 RestartSteps=4

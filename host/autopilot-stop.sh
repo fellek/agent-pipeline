@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-tmux kill-session -t autopilot 2>/dev/null || echo "autopilot is not running"
+session=$("$(dirname "$0")/autopilot-name.sh")
+tmux kill-session -t "=$session" 2>/dev/null || echo "$session is not running"

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/deny-master-push.py"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/deny-default-branch-push.py"
           }
         ]
       }

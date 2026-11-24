@@ -16,17 +16,18 @@ def window(percentage, reset):
 
 @pytest.fixture
 def statusline(tmp_path):
-    repo = tmp_path / "repo"
-    scripts = repo / "pipeline" / "host"
+    repo = tmp_path / "app"
+    plugin = tmp_path / "plugin"
+    scripts = plugin / "host"
     stubs = tmp_path / "bin"
     channel = tmp_path / "home" / ".claude" / "channels" / "telegram"
     scripts.mkdir(parents=True)
-    (repo / "pipeline" / "bin").mkdir()
-    (repo / ".pipeline").mkdir()
+    (plugin / "bin").mkdir()
+    (repo / ".pipeline").mkdir(parents=True)
     stubs.mkdir()
     channel.mkdir(parents=True)
     shutil.copy(script_path("autopilot-statusline.py"), scripts)
-    shutil.copy(script_path("telegram-send.py"), repo / "pipeline" / "bin")
+    shutil.copy(script_path("telegram-send.py"), plugin / "bin")
     curl_calls = tmp_path / "curl_calls"
     write_executable(
         stubs / "curl",
@@ -46,10 +47,11 @@ def statusline(tmp_path):
                 return []
             return curl_calls.read_text().split("---\n")[:-1]
 
-        def run(self, rate_limits=None, env=None):
+        def run(self, rate_limits=None, env=None, cwd=repo):
             payload = {} if rate_limits is None else {"rate_limits": rate_limits}
             return subprocess.run(
                 [str(scripts / "autopilot-statusline.py")],
+                cwd=cwd,
                 input=json.dumps(payload),
                 env={
                     "PATH": f"{stubs}:/usr/bin:/bin",
@@ -96,6 +98,17 @@ def test_limit_file_records_reset(statusline):
     statusline.run({"seven_day": window(100, WEEK_RESET)})
     limit = json.loads((statusline.pipeline / "limit.json").read_text())
     assert limit == {"seven_day": "2026-11-20 04:00"}
+
+
+def test_reads_and_writes_state_of_project_root_from_subdirectory(statusline):
+    project = statusline.pipeline.parent
+    subdirectory = project / "docs"
+    subdirectory.mkdir()
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    statusline.run({"seven_day": window(100, WEEK_RESET)}, cwd=subdirectory)
+    assert "chat_id=42" in statusline.calls[0]
+    assert (statusline.pipeline / "limit.json").exists()
+    assert not (subdirectory / ".pipeline").exists()
 
 
 def test_limit_file_drops_window_that_reset(statusline):

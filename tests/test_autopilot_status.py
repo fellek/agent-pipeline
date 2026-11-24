@@ -1,30 +1,32 @@
-import shutil
 import subprocess
 
 import pytest
-from conftest import script_path, write_executable
+from conftest import copy_scripts, write_executable
 
 
 @pytest.fixture
-def run_status(tmp_path):
-    repo = tmp_path / "repo"
-    scripts = repo / ".github" / "scripts"
+def run_status(tmp_path, app):
+    repo = app
+    scripts = tmp_path / "plugin" / "host"
     stubs = tmp_path / "bin"
-    scripts.mkdir(parents=True)
     (repo / ".pipeline").mkdir()
     stubs.mkdir()
-    shutil.copy(script_path("autopilot-status.sh"), scripts)
-    for cmd in ("tmux", "systemctl"):
-        write_executable(stubs / cmd, "exit 1")
+    copy_scripts(
+        scripts, "autopilot-status.sh", "autopilot-name.sh", "require-project-root.sh"
+    )
+    write_executable(stubs / "tmux", "exit 1")
+    write_executable(stubs / "systemctl", 'echo "$*"; exit 3')
 
-    def run():
-        return subprocess.run(
+    def run(cwd=repo, check=True):
+        result = subprocess.run(
             [str(scripts / "autopilot-status.sh")],
+            cwd=cwd,
             env={"PATH": f"{stubs}:/usr/bin:/bin"},
-            check=True,
+            check=check,
             capture_output=True,
             text=True,
-        ).stdout
+        )
+        return result.stdout if check else result
 
     return repo, run
 
@@ -38,3 +40,17 @@ def test_prints_limit_file(run_status):
 def test_prints_none_without_limit_file(run_status):
     _, run = run_status
     assert "--- limit\n(none)\n" in run()
+
+
+def test_queries_service_of_project(run_status):
+    _, run = run_status
+    assert "service: --user is-active autopilot-app.service\n" in run()
+
+
+def test_rejects_subdirectory_of_project(run_status):
+    repo, run = run_status
+    (repo / "docs").mkdir()
+    result = run(cwd=repo / "docs", check=False)
+    assert result.returncode == 1
+    assert "project root" in result.stderr
+    assert result.stdout == ""

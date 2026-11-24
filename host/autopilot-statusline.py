@@ -12,7 +12,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-PIPELINE = Path(__file__).parents[2] / ".pipeline"
+
+def pipeline_dir():
+    """State of the project root, not of the plugin, also from a subdirectory."""
+    root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    return Path(root or ".") / ".pipeline"
+
+
+PIPELINE = pipeline_dir()
 WINDOWS = {"five_hour": ("5h", "Session-Limit"), "seven_day": ("7d", "Wochenlimit")}
 
 

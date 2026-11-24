@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import pytest
 from conftest import load_script
@@ -135,3 +136,33 @@ def test_wrong_arguments_exit_with_usage(metrics, argv):
         metrics.main(argv)
 
     assert exit.value.code == metrics.__doc__
+
+
+def test_summary_reads_log_of_project_in_working_directory(
+    tmp_path, monkeypatch, metrics, capsys
+):
+    (tmp_path / ".pipeline").mkdir()
+    (tmp_path / ".pipeline" / "autopilot.log").write_text(
+        log_line(1, 1, {"issue": 1}, 0, 3600) + "\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    metrics.main(["summary"])
+
+    assert capsys.readouterr().out.startswith("1 Issues\n")
+
+
+def test_summary_reads_log_of_project_root_from_subdirectory(
+    tmp_path, monkeypatch, metrics, capsys
+):
+    (tmp_path / ".pipeline").mkdir()
+    (tmp_path / ".pipeline" / "autopilot.log").write_text(
+        log_line(1, 1, {"issue": 1}, 0, 3600) + "\n"
+    )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "docs").mkdir()
+    monkeypatch.chdir(tmp_path / "docs")
+
+    metrics.main(["summary"])
+
+    assert capsys.readouterr().out.startswith("1 Issues\n")

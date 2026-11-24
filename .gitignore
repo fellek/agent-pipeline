@@ -225,3 +225,6 @@ __marimo__/
 # Autopilot state and Telegram channel config
 .pipeline/
 .claude/channels/
+
+# Release worktree of this repository's own autopilot, see host/use-release.sh
+.claude/skills/pipeline/
