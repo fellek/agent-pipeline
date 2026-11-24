@@ -67,6 +67,7 @@ def test_sets_up_empty_repository(app, pipeline_releases):
     )
     assert "Automatically delete head branches" in result.stdout
     assert "ruleset" in result.stdout
+    assert "allow list" in result.stdout
 
 
 def test_result_passes_check_project(app):

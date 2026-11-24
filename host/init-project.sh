@@ -77,6 +77,7 @@ Manual steps:
 - Review the changes and commit them.
 - Start claude in the project once and accept the trust dialog, so it loads the plugin from $sub.
 - Add the project's checks to .claude/rules/project.md and run them in CI, with the submodule checked out.
+- Add the check commands to the allow list in .claude/settings.json, otherwise the autopilot stops at a permission prompt.
 - GitHub settings, General: enable "Automatically delete head branches".
 - GitHub settings, Rules: add a ruleset for the default branch that requires a pull request and the status checks agent-review and CI, and blocks force pushes and deletions.
 - In every other clone, for example the autopilot's: git submodule update --init && git config submodule.recurse true
