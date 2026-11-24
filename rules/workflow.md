@@ -10,7 +10,7 @@
 - One issue, one branch, one PR. Branch name: `issue-<number>-<short-slug>`. The PR description contains `Closes #<number>`.
 - If an issue is ambiguous or needs a decision that neither the project rules nor a review can settle, post the question as an issue comment and stop. Do not guess.
 - Findings outside the scope of the issue become a new issue, not part of the PR. The agent creates it itself with `gh issue create --label followup` (title, problem, link to the origin issue or PR) and sets no status label; `setprio` checks it before the pipeline selects it. If an open `followup` issue for the same finding exists, reuse it instead of creating another.
-- A finding about the pipeline itself (its skills, scripts, templates or these rules) is reported to the maintainer via Telegram with a link to an issue or PR comment in the project that describes it. Never file it in the pipeline repository: it is public, and project details must not reach it.
+- A finding about the pipeline itself (its skills, scripts, templates or these rules) made in a project other than the pipeline repository is reported to the maintainer via Telegram with a link to an issue or PR comment in the project that describes it. Never file it in the pipeline repository: it is public, and project details must not reach it. In the pipeline repository itself it is an ordinary `followup` issue.
 - New behavior requires tests in the same PR.
 - Run all checks listed in `.claude/rules/project.md` before every push. All must pass.
 - NEVER push to `<default>`. Merge a PR only when CI and `agent-review` are green on its head commit.
