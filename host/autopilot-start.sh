@@ -9,9 +9,7 @@ label=${1:-ready}
 
 fail() { echo "$session: $*, see ${host%/host}/docs/autopilot.md" >&2; exit 1; }
 
-# State lives in .pipeline/ of the project root; a subdirectory would get its own.
-[ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ] \
-  || fail "run it in the project root"
+reason=$("$host/require-project-root.sh") || fail "$reason"
 
 if tmux has-session -t "=$session" 2>/dev/null; then
   exec "$host/autopilot-status.sh"

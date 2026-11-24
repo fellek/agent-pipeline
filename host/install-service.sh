@@ -12,8 +12,7 @@ label=${1:-ready}
 fail() { echo "$*" >&2; exit 1; }
 
 [[ $# -le 1 && $label =~ ^[A-Za-z0-9._-]+$ ]] || fail "invalid label: $*"
-[ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ] \
-  || fail "run it in the project root"
+reason=$("$host/require-project-root.sh") || fail "$reason"
 # Keeps the paths free of systemd specifiers, quoting and sed delimiters.
 for path in "$PWD" "$host"; do
   [[ $path =~ ^[A-Za-z0-9._/-]+$ ]] || fail "unsupported path: $path"

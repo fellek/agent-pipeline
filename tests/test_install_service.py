@@ -13,7 +13,13 @@ def unit_settings(path):
 @pytest.fixture
 def install(tmp_path):
     host = tmp_path / "plugin" / "host"
-    copy_scripts(host, "install-service.sh", "autopilot-name.sh", "autopilot.service")
+    copy_scripts(
+        host,
+        "install-service.sh",
+        "autopilot-name.sh",
+        "autopilot.service",
+        "require-project-root.sh",
+    )
     stubs = tmp_path / "bin"
     stubs.mkdir()
     calls = tmp_path / "systemctl_calls"

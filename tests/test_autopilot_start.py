@@ -10,7 +10,9 @@ def run_start(tmp_path, app):
     scripts = tmp_path / "plugin" / "host"
     stubs = tmp_path / "bin"
     stubs.mkdir()
-    copy_scripts(scripts, "autopilot-start.sh", "autopilot-name.sh")
+    copy_scripts(
+        scripts, "autopilot-start.sh", "autopilot-name.sh", "require-project-root.sh"
+    )
     tmux_args = tmp_path / "tmux_args"
     write_executable(
         stubs / "tmux",

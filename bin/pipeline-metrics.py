@@ -13,11 +13,18 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# State of the project in the working directory, not of the plugin.
-PIPELINE = Path(".pipeline")
-STATE = PIPELINE / "state.json"
-LOG = PIPELINE / "autopilot.log"
 MARKER = "merge metrics"
+
+
+def pipeline_dir():
+    """State of the project root, not of the plugin, also from a subdirectory."""
+    root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    return Path(root or ".") / ".pipeline"
 
 
 def gh_api(*args):
@@ -56,7 +63,7 @@ def metrics_line(state, merged_at, labeled_at):
     return f"{merged_at} #{state['issue']} {MARKER} {json.dumps(metrics)}"
 
 
-def record(state_path=STATE, log_path=LOG):
+def record(state_path, log_path):
     state = json.loads(state_path.read_text())
     repo = "repos/{owner}/{repo}"
     merged_at = json.loads(gh_api(f"{repo}/pulls/{state['pr']}"))["merged_at"]
@@ -104,9 +111,10 @@ def summarize(records):
 def main(argv):
     match argv:
         case ["record"]:
-            record()
+            pipeline = pipeline_dir()
+            record(pipeline / "state.json", pipeline / "autopilot.log")
         case ["summary"]:
-            print(summarize(read_metrics(LOG)))
+            print(summarize(read_metrics(pipeline_dir() / "autopilot.log")))
         case _:
             sys.exit(__doc__)
 

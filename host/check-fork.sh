@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+reason=$("$(dirname "$0")/require-project-root.sh") || { echo "FAIL: $reason"; exit 1; }
 mkdir -p .pipeline
 out=.pipeline/fork-check.txt
 codeword="fork-check-$RANDOM$RANDOM"

@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 
 import pytest
@@ -78,6 +79,28 @@ def test_refuses_directory_that_is_no_worktree(releases):
     assert result.returncode == 1
     assert "not a worktree" in result.stderr
     assert git(clone, "branch", "--show-current") == "feature"
+
+
+def test_refuses_independent_clone(releases):
+    clone, tags = releases
+    git(clone, "clone", "-q", str(clone), WORKTREE)
+
+    result = use_release(clone, "v1")
+
+    assert result.returncode == 1
+    assert "not a worktree of this repository" in result.stderr
+    assert git(clone / WORKTREE, "rev-parse", "HEAD") != tags["v1"]
+
+
+def test_adds_worktree_again_after_its_directory_was_deleted(releases):
+    clone, tags = releases
+    use_release(clone, "v1")
+    shutil.rmtree(clone / WORKTREE)
+
+    result = use_release(clone, "v2")
+
+    assert result.returncode == 0, result.stderr
+    assert git(clone / WORKTREE, "rev-parse", "HEAD") == tags["v2"]
 
 
 def test_runs_only_in_repository_root(releases):

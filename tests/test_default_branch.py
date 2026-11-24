@@ -54,3 +54,13 @@ def test_rejects_arguments(script):
         script.main(["main"])
 
     assert exit.value.code == script.__doc__
+
+
+def test_ignores_local_branch_named_like_remote_branch(
+    script, capsys, repos, default_branch
+):
+    # With a local branch origin/<x>, symbolic-ref --short prints remotes/origin/<x>.
+    _, clone = repos
+    git(clone, "branch", f"origin/{default_branch}")
+
+    assert run_main(script, capsys) == (default_branch, 0)

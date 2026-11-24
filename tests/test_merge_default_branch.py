@@ -66,3 +66,38 @@ def test_unknown_default_branch_exits_with_error(script, capsys, repos, tmp_path
     output = capsys.readouterr()
     assert output.out == ""
     assert "origin/HEAD is not set" in output.err
+
+
+def run_failing(script, capsys):
+    with pytest.raises(SystemExit) as exit:
+        script.main([])
+    output = capsys.readouterr()
+    assert output.out == ""
+    return exit.value.code, output.err
+
+
+def test_merge_that_does_not_start_is_not_a_conflict(
+    script, capsys, repos, default_branch
+):
+    upstream, clone = repos
+    head = commit(clone, "feature", "feature")
+    commit(upstream, "notes", "default")
+    git(upstream, "push", "origin", default_branch)
+    (clone / "notes").write_text("untracked")
+
+    code, error = run_failing(script, capsys)
+
+    assert code == 2
+    assert "untracked working tree files would be overwritten" in error
+    assert git(clone, "rev-parse", "HEAD") == head
+    assert (clone / "notes").read_text() == "untracked"
+
+
+def test_failed_fetch_exits_with_error(script, capsys, repos, tmp_path):
+    _, clone = repos
+    git(clone, "remote", "set-url", "origin", str(tmp_path / "missing"))
+
+    code, error = run_failing(script, capsys)
+
+    assert code == 2
+    assert "missing" in error

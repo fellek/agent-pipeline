@@ -21,8 +21,10 @@ def git(*args):
 def origin_head():
     if git("rev-parse", "--verify", "--quiet", ORIGIN_HEAD).returncode != 0:
         return None
-    ref = git("symbolic-ref", "--quiet", "--short", ORIGIN_HEAD)
-    return ref.stdout.strip().removeprefix("origin/") if ref.returncode == 0 else None
+    # The full ref, since --short is ambiguous with a local branch named origin/<x>.
+    ref = git("symbolic-ref", "--quiet", ORIGIN_HEAD)
+    branch = ref.stdout.strip().removeprefix("refs/remotes/origin/")
+    return branch if ref.returncode == 0 else None
 
 
 def default_branch():

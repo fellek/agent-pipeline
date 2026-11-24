@@ -11,12 +11,18 @@ tag=refs/tags/$1
 [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ] || fail "run it in the repository root"
 git fetch --quiet origin "+$tag:$tag" || fail "no tag $1 on origin"
 
+common_dir() { git -C "$1" rev-parse --path-format=absolute --git-common-dir; }
+
 if [ -e "$worktree" ]; then
+  # An independent clone there would not see the tag fetched into this repository.
   [ "$(git -C "$worktree" rev-parse --show-toplevel)" = "$(cd "$worktree" && pwd -P)" ] \
-    || fail "$worktree is not a worktree"
+    && [ "$(common_dir "$worktree")" = "$(common_dir .)" ] \
+    || fail "$worktree is not a worktree of this repository"
   [ -z "$(git -C "$worktree" status --porcelain)" ] || fail "$worktree has changes"
   git -C "$worktree" switch --quiet --detach "$tag"
 else
+  # Forgets a worktree whose directory was deleted, so it can be added again.
+  git worktree prune
   git worktree add --quiet --detach "$worktree" "$tag"
 fi
 echo "$worktree: $1"

@@ -155,6 +155,93 @@ def test_remote_without_head_protects_main_and_master(hook, issue_repo):
     assert not hook.is_blocked("git push github issue-64-x", issue_repo)
 
 
+ORIGIN_URL = "https://github.com/o/app.git"
+
+
+@pytest.fixture
+def remote_repo(tmp_path, git_identity):
+    """A clone on issue-64-x whose origin has a URL and the default branch develop."""
+    repo = tmp_path / "app"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "issue-64-x")
+    git(repo, "remote", "add", "origin", ORIGIN_URL)
+    set_remote_head(repo, "origin", "develop")
+    return str(repo)
+
+
+@pytest.mark.parametrize(
+    "url", [ORIGIN_URL, "https://github.com/o/app", "https://github.com/o/app/"]
+)
+def test_push_to_url_of_remote_reads_its_default_branch(hook, remote_repo, url):
+    assert hook.is_blocked(f"git push {url} develop", remote_repo)
+    assert not hook.is_blocked(f"git push {url} issue-64-x", remote_repo)
+
+
+def test_push_to_push_url_of_remote_reads_its_default_branch(hook, remote_repo):
+    git(remote_repo, "remote", "set-url", "--push", "origin", "git@github.com:o/app")
+    assert hook.is_blocked("git push git@github.com:o/app.git develop", remote_repo)
+
+
+def test_push_to_unknown_url_protects_all_default_branches(hook, remote_repo):
+    git(remote_repo, "switch", "-q", "-c", "develop")
+    for command in [
+        "git push git@github.com:o/app.git develop",
+        "git push git@github.com:o/app.git HEAD",
+        "git push git@github.com:o/app.git",
+        "git push ../other main",
+        "git push ../other master",
+    ]:
+        assert hook.is_blocked(command, remote_repo), command
+    assert not hook.is_blocked("git push ../other issue-64-x", remote_repo)
+
+
+@pytest.mark.parametrize(
+    "key", ["remote.pushDefault", "branch.develop.pushRemote", "branch.develop.remote"]
+)
+def test_bare_push_reads_push_remote_from_config(hook, remote_repo, key):
+    set_remote_head(remote_repo, "upstream", "develop")
+    git(remote_repo, "remote", "add", "upstream", "https://github.com/u/app.git")
+    git(
+        remote_repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/x"
+    )
+    git(remote_repo, "switch", "-q", "-c", "develop")
+    assert not hook.is_blocked("git push", remote_repo)
+    git(remote_repo, "config", key, "upstream")
+    assert hook.is_blocked("git push", remote_repo)
+
+
+@pytest.mark.parametrize("mode", ["upstream", "tracking"])
+def test_push_without_refspec_to_upstream_branch_is_blocked(hook, remote_repo, mode):
+    # git switch -c issue-64-y origin/develop sets this upstream.
+    git(remote_repo, "config", "branch.issue-64-x.remote", "origin")
+    git(remote_repo, "config", "branch.issue-64-x.merge", "refs/heads/develop")
+    assert not hook.is_blocked("git push", remote_repo)
+    git(remote_repo, "config", "push.default", mode)
+    assert hook.is_blocked("git push", remote_repo)
+    assert hook.is_blocked("git push origin", remote_repo)
+    assert hook.is_blocked(f"git push {ORIGIN_URL}", remote_repo)
+    assert not hook.is_blocked("git push origin issue-64-x", remote_repo)
+
+
+def test_push_without_refspec_with_matching_is_blocked(hook, remote_repo):
+    git(remote_repo, "config", "push.default", "matching")
+    assert hook.is_blocked("git push", remote_repo)
+    assert hook.is_blocked("git push origin", remote_repo)
+
+
+@pytest.mark.parametrize(
+    ("refspec", "blocked"),
+    [("HEAD:refs/heads/develop", True), ("refs/heads/*", True), ("HEAD", False)],
+)
+def test_push_without_refspec_follows_remote_push_config(
+    hook, remote_repo, refspec, blocked
+):
+    git(remote_repo, "config", "remote.origin.push", refspec)
+    assert hook.is_blocked("git push", remote_repo) is blocked
+    assert hook.is_blocked("git push origin", remote_repo) is blocked
+    assert not hook.is_blocked("git push origin issue-64-x", remote_repo)
+
+
 @pytest.mark.parametrize(
     ("command", "exit_code"),
     [("git -C {repo} push origin {default}", 2), ("git push origin issue-64-x", 0)],
