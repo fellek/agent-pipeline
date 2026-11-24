@@ -1,3 +1,4 @@
+import io
 import json
 import subprocess
 
@@ -343,6 +344,30 @@ def test_hook_exit_code(issue_repo, default_branch, command, exit_code, message)
         "sudo -u root git push origin {default}",
         "time -p git push origin {default}",
         "env -i -u FOO HOME=/x git push origin {default}",
+        "env -C {default_repo} git push",
+        "env --chdir={default_repo} git push",
+        "env --chdir {default_repo} git push",
+        "sudo -D {default_repo} git push",
+        "sudo --chdir={default_repo} git push",
+        "env -C {default_repo} sh -c 'git push'",
+        "bash -lc 'git push origin {default}'",
+        "sh -ec 'git push origin {default}'",
+        "bash -o pipefail -xc 'git push origin {default}'",
+        "bash --login -c 'git push origin {default}'",
+        "git push origin HEAD:heads/{default}",
+        "git push origin heads/{default}",
+        "timeout 60 git push origin {default}",
+        "timeout -k 5 --foreground 60 git push origin {default}",
+        "nice git push origin {default}",
+        "nice -n 5 git push origin {default}",
+        "ionice -c 3 git push origin {default}",
+        "stdbuf -o L git push origin {default}",
+        "xargs git push origin {default} < /dev/null",
+        "xargs -I x git push origin {default}",
+        "setsid git push origin {default}",
+        "doas -u root git push origin {default}",
+        "echo issue#3 && git push origin {default}",
+        "echo a#b c#d; git push origin {default}",
         "pushd {default_repo} && git push",
         "git -c push.default=matching push origin",
         "git -c remote.origin.push=HEAD:{default} push origin",
@@ -364,16 +389,23 @@ def test_push_in_shell_constructs_and_config_overrides_is_blocked(
 @pytest.mark.parametrize(
     "command",
     [
-        "{ git push origin issue-64-x; }",
+        "{{ git push origin issue-64-x; }}",
         "if true; then git push origin issue-64-x; fi",
         "bash -c 'git push origin issue-64-x'",
         'echo "$(git log)"',
         "sudo -u root git status",
         "git -c push.default=simple push origin",
         "GIT_TRACE=1 git push origin",
+        "env -C {issue_repo} git push",
+        "bash -lc 'git push origin issue-64-x'",
+        "timeout 60 git push origin issue-64-x",
+        "echo issue#3 && git push origin issue-64-x",
+        "echo hi # && git push origin main",
+        "echo hi;# git push origin main",
     ],
 )
 def test_other_shell_constructs_are_allowed(hook, issue_repo, command):
+    command = command.format(issue_repo=issue_repo)
     assert hook.is_blocked(command, issue_repo) is None
 
 
@@ -415,3 +447,42 @@ def test_refspec_without_destination_follows_remote_push_config(
     ):
         assert bool(hook.is_blocked(command, issue_repo)) is blocked
     assert not hook.is_blocked("git push origin issue-64-x:issue-64-x", issue_repo)
+
+
+def test_command_variables_cannot_change_which_git_the_hook_runs(
+    hook, issue_repo, default_branch, tmp_path
+):
+    planted = tmp_path / "tools"
+    planted.mkdir()
+    marker = tmp_path / "ran"
+    (planted / "git").write_text(f"#!/bin/sh\ntouch {marker}\n")
+    (planted / "git").chmod(0o755)
+    command = f"PATH={planted}:/nonexistent git push origin {default_branch}"
+    assert hook.is_blocked(command, issue_repo) == hook.DEFAULT_BRANCH
+    assert not hook.is_blocked(f"PATH={planted} git log", issue_repo)
+    assert not hook.is_blocked(f"LD_PRELOAD=/x.so PATH={planted} git p", issue_repo)
+    assert not marker.exists()
+
+
+def test_hook_error_blocks_push_only(hook, issue_repo, monkeypatch, capsys):
+    def run(command):
+        hook_input = {"cwd": issue_repo, "tool_input": {"command": command}}
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(hook_input)))
+        try:
+            hook.main()
+        except SystemExit as exit:
+            return exit.code
+        return 0
+
+    # Every git call of the hook raises FileNotFoundError.
+    monkeypatch.setattr(hook, "GIT", "/nonexistent/git")
+    assert run("git push origin issue-64-x") == 2
+    assert capsys.readouterr().err.startswith("push hook failed")
+    assert run("git status") == 0
+
+
+def test_tags_only_push_on_default_branch_is_allowed(hook, default_repo):
+    assert not hook.is_blocked("git push --tags", default_repo)
+    assert not hook.is_blocked("git push origin --tags", default_repo)
+    assert hook.is_blocked("git push --follow-tags", default_repo)
+    assert hook.is_blocked("git push --tags origin HEAD", default_repo)

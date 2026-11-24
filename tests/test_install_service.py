@@ -154,3 +154,22 @@ def test_keeps_old_unit_of_other_project(install, app):
     assert [p.name for p in units.iterdir()] == ["autopilot.service"]
     assert install.calls() == []
     assert install.tmux_calls() == []
+
+
+def test_refuses_unit_of_other_project_with_same_name(install, app, tmp_path):
+    fork = project(tmp_path / "fork", "https://github.com/other/app.git")
+    assert install.run(fork)[0].returncode == 0
+    result, units = install.run(app)
+    assert result.returncode == 1
+    assert "same repository name" in result.stderr
+    assert unit_settings(units / "autopilot-app.service")["WorkingDirectory"] == str(
+        fork
+    )
+
+
+def test_reinstall_in_same_project_replaces_unit(install, app):
+    install.run(app)
+    result, units = install.run(app, "batch-1")
+    assert result.returncode == 0, result.stderr
+    exec_start = unit_settings(units / "autopilot-app.service")["ExecStart"]
+    assert exec_start.endswith("autopilot-service.sh batch-1")

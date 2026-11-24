@@ -12,6 +12,10 @@ fail() { echo "$session: $*, see ${host%/host}/docs/autopilot.md" >&2; exit 1; }
 reason=$("$host/require-project-root.sh") || fail "$reason"
 
 if tmux has-session -t "=$session" 2>/dev/null; then
+  # The name comes from the repository name alone, so a fork and its upstream clash.
+  path=$(tmux display-message -p -t "=$session" '#{session_path}')
+  [ "$(cd "$path" 2>/dev/null && pwd -P)" = "$(pwd -P)" ] \
+    || fail "session $session runs $path, not $PWD: projects with the same repository name cannot run side by side"
   exec "$host/autopilot-status.sh"
 fi
 

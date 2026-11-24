@@ -7,6 +7,7 @@ host=$(cd "$(dirname "$0")" && pwd)
 unit=$("$host/autopilot-name.sh")
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+new_unit="$unit_dir/$unit.service"
 old_unit="$unit_dir/autopilot.service"
 label=${1:-ready}
 fail() { echo "$*" >&2; exit 1; }
@@ -17,6 +18,13 @@ reason=$("$host/require-project-root.sh") || fail "$reason"
 for path in "$PWD" "$host"; do
   [[ $path =~ ^[A-Za-z0-9._/-]+$ ]] || fail "unsupported path: $path"
 done
+
+# The name comes from the repository name alone, so a fork and its upstream clash.
+if [ -f "$new_unit" ]; then
+  project=$(sed -n 's/^WorkingDirectory=//p' "$new_unit")
+  [ "$project" = "$PWD" ] \
+    || fail "$new_unit runs $project, not $PWD: projects with the same repository name cannot run side by side"
+fi
 
 if [ -f "$old_unit" ]; then
   old_project=$(sed -n 's/^WorkingDirectory=//p' "$old_unit")
@@ -30,6 +38,6 @@ fi
 
 mkdir -p "$unit_dir"
 sed -e "s|@NAME@|$unit|" -e "s|@PROJECT@|$PWD|" -e "s|@HOST@|$host|" -e "s|@LABEL@|$label|" \
-  "$host/autopilot.service" > "$unit_dir/$unit.service"
+  "$host/autopilot.service" > "$new_unit"
 systemctl --user daemon-reload
 systemctl --user enable --now "$unit.service"

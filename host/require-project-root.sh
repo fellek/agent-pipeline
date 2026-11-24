@@ -7,6 +7,10 @@ set -euo pipefail
 plugin=$(cd "$(dirname "$0")/.." && pwd -P)
 here=$(pwd -P)
 
+command -v git >/dev/null || {
+  echo "git is missing"
+  exit 1
+}
 root=$(git rev-parse --show-toplevel 2>/dev/null) && [ "$root" = "$here" ] || {
   echo "run it in the project root"
   exit 1

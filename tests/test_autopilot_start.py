@@ -17,6 +17,7 @@ def run_start(tmp_path, app):
     write_executable(
         stubs / "tmux",
         '[ "$1" = has-session ] && { [ "$3" = "=${RUNNING_SESSION-}" ]; exit; }; '
+        '[ "$1" = display-message ] && { echo "${SESSION_PATH-}"; exit; }; '
         f'printf "%s\\n" "$@" > {tmux_args}'
         '; shift 6; "$@"',
     )
@@ -137,4 +138,23 @@ def test_refuses_while_old_session_runs(run_start, app):
     result, tmux_args, *_ = run_start(env={"RUNNING_SESSION": "autopilot"})
     assert result.returncode == 1
     assert "old session autopilot" in result.stderr
+    assert tmux_args == []
+
+
+def test_running_session_of_project_shows_status(run_start, tmp_path, app):
+    write_executable(tmp_path / "plugin" / "host" / "autopilot-status.sh", "echo up")
+    result, tmux_args, *_ = run_start(
+        env={"RUNNING_SESSION": "autopilot-app", "SESSION_PATH": str(app)}
+    )
+    assert (result.returncode, result.stdout) == (0, "up\n")
+    assert tmux_args == []
+
+
+def test_refuses_session_of_other_project_with_same_name(run_start, tmp_path):
+    fork = project(tmp_path / "fork", "https://github.com/other/app.git")
+    result, tmux_args, *_ = run_start(
+        env={"RUNNING_SESSION": "autopilot-app", "SESSION_PATH": str(fork)}
+    )
+    assert result.returncode == 1
+    assert f"session autopilot-app runs {fork}" in result.stderr
     assert tmux_args == []

@@ -96,3 +96,20 @@ def test_check_fork_rejects_subdirectory(tmp_path, app):
     assert result.returncode == 1
     assert "project root" in result.stdout
     assert not (app / "docs" / ".pipeline").exists()
+
+
+def test_reports_missing_git(plugin, app, tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("bash", "dirname"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    result = subprocess.run(
+        [str(plugin / "host" / SCRIPT)],
+        cwd=app,
+        env={"PATH": str(bin_dir)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert result.stdout == "git is missing\n"

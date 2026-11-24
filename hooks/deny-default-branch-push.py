@@ -13,8 +13,10 @@ a refspec without :<dst> is also mapped through remote.<remote>.push, as git doe
 config. If a push would update the current branch and that branch is unknown, e.g.
 after a cd the hook cannot follow, the push is blocked with its own message.
 
-Pushes are found behind shell keywords and groups, prefix commands such as env and
-sudo, command substitutions (also in double quotes), sh -c, eval and git aliases.
+Pushes are found behind shell keywords and groups, prefix commands such as env,
+sudo and timeout (also with env -C or sudo -D), command substitutions (also in double
+quotes), sh -c and bash -lc, eval and git aliases. If the hook fails while checking a
+command that mentions push, the command is blocked.
 The hook guards against mistakes, not against a determined user: a push in a script
 file, through a function or a variable set in the same command is not seen.
 """
@@ -23,11 +25,17 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 from typing import NamedTuple
 
 FALLBACK_BRANCHES = {"main", "master"}
+# Run by absolute path, so PATH=... before git in the command cannot change it.
+GIT = shutil.which("git") or "/usr/bin/git"
+# Assignments before git that would change which programs the hook's own git runs.
+UNSAFE_VARIABLES = {"PATH", "GIT_EXEC_PATH"}
+UNSAFE_VARIABLE_PREFIXES = ("LD_", "DYLD_")
 SEPARATOR_CHARS = set("();<>|&\n`")
 # Global git options that change which repository or config a command sees.
 GIT_OPTIONS_WITH_VALUE = {
@@ -45,15 +53,41 @@ PUSHES_ALL_BRANCHES = {"--all", "--branches", "--mirror"}
 # Words that may come before a command, with their options that take a value.
 PREFIX_COMMANDS = {
     "env": {"-u", "-C", "--unset", "--chdir"},
-    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U"},
+    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "--chdir"},
+    "doas": {"-u", "-C"},
     "command": set(),
     "time": set(),
     "nohup": set(),
+    "setsid": set(),
     "exec": {"-a"},
     "builtin": set(),
+    "timeout": {"-k", "-s", "--kill-after", "--signal"},
+    "nice": {"-n", "--adjustment"},
+    "ionice": {"-c", "-n", "-p", "--class", "--classdata", "--pid"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
+    "xargs": {
+        "-a",
+        "-d",
+        "-E",
+        "-I",
+        "-L",
+        "-n",
+        "-P",
+        "-s",
+        "--arg-file",
+        "--delimiter",
+        "--max-args",
+        "--max-procs",
+        "--max-chars",
+    },
 }
+# Words after the options that come before the command, e.g. the duration of timeout.
+PREFIX_ARGUMENTS = {"timeout": 1}
+# Options of prefix commands that change the directory the command runs in.
+CHDIR_OPTIONS = {"env": {"-C", "--chdir"}, "sudo": {"-D", "--chdir"}}
 SHELL_KEYWORDS = {"{", "}", "!", "if", "then", "else", "elif", "while", "until", "do"}
 SHELLS = {"sh", "bash", "dash", "zsh", "ksh"}
+SHELL_OPTIONS_WITH_VALUE = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 # Command substitutions, also inside double quotes, where shlex keeps them in a word.
 SUBSTITUTION = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 MAX_DEPTH = 5
@@ -87,7 +121,7 @@ class Repo(NamedTuple):
 
     def git(self, *args):
         return subprocess.run(
-            ["git", "-C", self.cwd, *self.options, *args],
+            [GIT, "-C", self.cwd, *self.options, *args],
             check=False,
             capture_output=True,
             text=True,
@@ -95,11 +129,24 @@ class Repo(NamedTuple):
         )
 
 
+class WordStartComments:
+    """As in the shell, "#" starts a comment only at the start of a word: shlex
+    checks commenters inside a word too, in state "a"."""
+
+    def __init__(self, lexer):
+        self.lexer = lexer
+
+    def __contains__(self, char):
+        return char == "#" and self.lexer.state != "a"
+
+
 def tokenize(command):
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace = " \t\r"
-    # "$" and braces keep $VAR and ${VAR} in one word, for resolve().
-    lexer.wordchars += ":+@${}"
+    # "$" and braces keep $VAR and ${VAR} in one word, for resolve(); "#" inside a
+    # word is part of it.
+    lexer.wordchars += ":+@${}#"
+    lexer.commenters = WordStartComments(lexer)
     return list(lexer)
 
 
@@ -168,12 +215,17 @@ def protected_branches(repo, remote):
 
 
 def full_ref(name, repo):
-    """refs/heads/<branch> for a branch name, HEAD or @; None for an unknown branch."""
+    """refs/heads/<branch> for a branch name, HEAD or @; None for an unknown branch.
+    As in git's lookup order, heads/<branch> is refs/heads/<branch>."""
     if name in ("HEAD", "@"):
         name = current_branch(repo)
         if not name:
             return None
-    return name if name.startswith("refs/") else f"refs/heads/{name}"
+    if name.startswith("refs/"):
+        return name
+    if name.startswith("heads/"):
+        return f"refs/{name}"
+    return f"refs/heads/{name}"
 
 
 def configured_push(remote, repo):
@@ -259,12 +311,15 @@ def blocked_push(push_args, repo):
     """The reason to block `git push <push_args>` in <repo>, or None."""
     positional = []
     repo_option = None
+    tags_only = False
     args = iter(push_args)
     for arg in args:
         option, has_value, value = arg.partition("=")
         if arg in PUSHES_ALL_BRANCHES:
             return DEFAULT_BRANCH
-        if option == "--repo":
+        if arg == "--tags":
+            tags_only = True
+        elif option == "--repo":
             repo_option = value if has_value else next(args, None)
         elif arg in PUSH_OPTIONS_WITH_VALUE:
             next(args, None)
@@ -281,6 +336,9 @@ def blocked_push(push_args, repo):
             *(protected_branches(repo, remote) for remote in remote_names(repo))
         )
     refspecs = positional[1:]
+    if tags_only and not refspecs:
+        # --tags without a refspec pushes refs/tags/* only.
+        return None
     destinations = [
         target
         for remote in remotes or [repository]
@@ -302,24 +360,48 @@ def targets(target, protected):
     return target == "" or target in protected or "*" in target
 
 
-def strip_prefixes(segment, env):
-    """<segment> without leading prefix commands, their options, shell keywords and
-    variable assignments; the assignments go into <env>."""
+def strip_prefixes(segment, env, cwd):
+    """<segment> without leading prefix commands, their options and arguments, shell
+    keywords and variable assignments, and the directory it runs in. The assignments
+    go into <env>."""
     while segment:
         word = segment[0]
         if word in PREFIX_COMMANDS or word in SHELL_KEYWORDS:
             segment = segment[1:]
             options = PREFIX_COMMANDS.get(word, set())
+            chdir = CHDIR_OPTIONS.get(word, set())
             while segment and segment[0].startswith("-") and word in PREFIX_COMMANDS:
-                takes_value = segment[0] in options
+                option, has_value, value = segment[0].partition("=")
+                takes_value = option in options and not has_value
+                if takes_value:
+                    value = segment[1] if len(segment) > 1 else ""
+                if option in chdir:
+                    cwd = resolve(cwd, value)
                 segment = segment[2:] if takes_value else segment[1:]
+            segment = segment[PREFIX_ARGUMENTS.get(word, 0) :]
         elif "=" in word and not word.startswith("-"):
             name, _, value = word.partition("=")
-            env[name] = value
+            if name not in UNSAFE_VARIABLES and not name.startswith(
+                UNSAFE_VARIABLE_PREFIXES
+            ):
+                env[name] = value
             segment = segment[1:]
         else:
             break
-    return segment
+    return segment, cwd
+
+
+def shell_script(args):
+    """The script of `sh <args>` given with -c, also in combined flags like -lc."""
+    args = iter(args)
+    for arg in args:
+        if arg in SHELL_OPTIONS_WITH_VALUE:
+            next(args, None)
+        elif arg.startswith("-") and not arg.startswith("--") and "c" in arg:
+            return next(args, None)
+        elif not arg.startswith(("-", "+")):
+            return None
+    return None
 
 
 def is_blocked(command, cwd, depth=0):
@@ -336,21 +418,20 @@ def is_blocked(command, cwd, depth=0):
         return DEFAULT_BRANCH if "git" in command and "push" in command else None
     for segment in segments(tokens):
         env = {}
-        segment = strip_prefixes(segment, env)
+        segment, command_cwd = strip_prefixes(segment, env, cwd)
         if not segment:
             continue
         name = os.path.basename(segment[0])
         if name in ("cd", "pushd") and len(segment) > 1:
             cwd = resolve(cwd, segment[1])
-        elif name in SHELLS and "-c" in segment[1:-1]:
-            script = segment[segment.index("-c", 1) + 1]
-            if reason := is_blocked(script, cwd, depth + 1):
+        elif name in SHELLS and (script := shell_script(segment[1:])) is not None:
+            if reason := is_blocked(script, command_cwd, depth + 1):
                 return reason
         elif name == "eval":
-            if reason := is_blocked(" ".join(segment[1:]), cwd, depth + 1):
+            if reason := is_blocked(" ".join(segment[1:]), command_cwd, depth + 1):
                 return reason
         elif name == "git":
-            repo = Repo(cwd, env={**os.environ, **env} if env else None)
+            repo = Repo(command_cwd, env={**os.environ, **env} if env else None)
             if reason := blocked_git(segment[1:], repo, depth):
                 return reason
     return None
@@ -379,7 +460,11 @@ def blocked_git(git_args, repo, depth):
 def main():
     hook_input = json.load(sys.stdin)
     command = hook_input.get("tool_input", {}).get("command", "")
-    if reason := is_blocked(command, hook_input.get("cwd", os.getcwd())):
+    try:
+        reason = is_blocked(command, hook_input.get("cwd", os.getcwd()))
+    except Exception as error:  # noqa: BLE001 - exit 1 would let the push through
+        reason = f"push hook failed: {error!r}" if "push" in command else None
+    if reason:
         print(reason, file=sys.stderr)
         sys.exit(2)
 
