@@ -1,4 +1,5 @@
 import importlib.util
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -61,17 +62,48 @@ def git_identity(monkeypatch):
         monkeypatch.setenv(key, value)
 
 
+@pytest.fixture(params=["main", "master"])
+def default_branch(request):
+    return request.param
+
+
 @pytest.fixture
-def repos(tmp_path, monkeypatch, git_identity):
+def other_branch(default_branch):
+    """The common default branch name that this repository does not use."""
+    return "master" if default_branch == "main" else "main"
+
+
+@pytest.fixture
+def repos(tmp_path, monkeypatch, git_identity, default_branch):
     remote, upstream, clone = (tmp_path / n for n in ("remote", "upstream", "clone"))
-    git(tmp_path, "init", "--bare", "-b", "master", str(remote))
+    git(tmp_path, "init", "--bare", "-b", default_branch, str(remote))
     git(tmp_path, "clone", str(remote), str(upstream))
     commit(upstream, "base", "base")
-    git(upstream, "push", "origin", "master")
+    git(upstream, "push", "origin", default_branch)
     git(tmp_path, "clone", str(remote), str(clone))
     git(clone, "switch", "-c", "feature")
     monkeypatch.chdir(clone)
     return upstream, clone
+
+
+def project(path, origin):
+    """A git repository at path with the given origin URL, the project of an instance."""
+    path.mkdir(parents=True)
+    git(path, "init", "-q")
+    git(path, "remote", "add", "origin", origin)
+    return path
+
+
+def copy_scripts(folder, *names):
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        shutil.copy(script_path(name), folder)
+
+
+@pytest.fixture
+def app(tmp_path):
+    """Project of an instance named autopilot-app."""
+    return project(tmp_path / "app", "git@github.com:o/app.git")
 
 
 def run_main(script, capsys, *argv):

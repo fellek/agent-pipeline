@@ -1,18 +1,16 @@
 import json
-import shutil
 import subprocess
 
 import pytest
-from conftest import script_path, write_executable
+from conftest import copy_scripts, project, write_executable
 
 
 @pytest.fixture
-def run_start(tmp_path):
+def run_start(tmp_path, app):
     scripts = tmp_path / "plugin" / "host"
     stubs = tmp_path / "bin"
-    scripts.mkdir(parents=True)
     stubs.mkdir()
-    shutil.copy(script_path("autopilot-start.sh"), scripts)
+    copy_scripts(scripts, "autopilot-start.sh", "autopilot-name.sh")
     tmux_args = tmp_path / "tmux_args"
     write_executable(
         stubs / "tmux",
@@ -31,12 +29,14 @@ def run_start(tmp_path):
 esac""",
     )
     write_executable(stubs / "loginctl", "echo yes")
-    for cmd in ("git", "gh", "bun", "uv"):
+    for cmd in ("gh", "bun"):
         write_executable(stubs / cmd, "exit 0")
 
-    def run(*args, env=None):
+    def run(*args, env=None, cwd=app):
+        tmux_args.unlink(missing_ok=True)
         result = subprocess.run(
             [str(scripts / "autopilot-start.sh"), *args],
+            cwd=cwd,
             env={
                 "PATH": f"{stubs}:/usr/bin:/bin",
                 "TELEGRAM_BOT_TOKEN": "t",
@@ -97,3 +97,25 @@ def test_registers_status_line_for_session_only(run_start):
     assert status_line["command"].endswith("/plugin/host/autopilot-statusline.py")
     assert status_line["command"].startswith("/")
     assert status_line["refreshInterval"] == 60
+
+
+def test_starts_session_named_after_repository_in_project(run_start, tmp_path):
+    result, tmux_args, *_ = run_start()
+    assert result.returncode == 0, result.stderr
+    assert tmux_args[:6] == [
+        "new-session",
+        "-d",
+        "-s",
+        "autopilot-app",
+        "-c",
+        str(tmp_path / "app"),
+    ]
+    assert (tmp_path / "app" / ".pipeline").is_dir()
+
+
+def test_two_projects_get_separate_sessions(run_start, tmp_path):
+    site = project(tmp_path / "site", "https://github.com/o/site.git")
+    _, app_args, *_ = run_start()
+    _, site_args, *_ = run_start(cwd=site)
+    assert app_args[3] == "autopilot-app"
+    assert site_args[3:6] == ["autopilot-site", "-c", str(site)]

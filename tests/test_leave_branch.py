@@ -48,13 +48,13 @@ def test_pushes_new_branch_with_commits(script, capsys, repos):
     assert remote_head(clone, "feature") == head
 
 
-def test_pushes_merge_of_master(script, capsys, repos):
+def test_pushes_merge_of_default_branch(script, capsys, repos, default_branch):
     upstream, clone = repos
     commit(clone, "feature", "feature")
     git(clone, "push", "origin", "feature")
     commit(upstream, "other", "other")
-    git(upstream, "push", "origin", "master")
-    load_script("merge-master.py").main([])
+    git(upstream, "push", "origin", default_branch)
+    load_script("merge-default-branch.py").main([])
     capsys.readouterr()
     head = git(clone, "rev-parse", "HEAD")
 
@@ -82,14 +82,23 @@ def test_diverged_branch_fails_to_push(script, capsys, repos):
     assert code == 2
 
 
-def test_never_pushes_master(script, capsys, repos):
+def test_never_pushes_default_branch(script, capsys, repos, default_branch):
     _, clone = repos
-    git(clone, "switch", "master")
-    before = remote_head(clone, "master")
+    git(clone, "switch", default_branch)
+    before = remote_head(clone, default_branch)
     commit(clone, "local", "local")
 
-    assert run_main(script, capsys, "master") == ("clean", 0)
-    assert remote_head(clone, "master") == before
+    assert run_main(script, capsys, default_branch) == ("clean", 0)
+    assert remote_head(clone, default_branch) == before
+
+
+def test_pushes_branch_named_like_other_default(script, capsys, repos, other_branch):
+    _, clone = repos
+    git(clone, "switch", "-c", other_branch)
+    head = commit(clone, "local", "local")
+
+    assert run_main(script, capsys, other_branch) == ("pushed", 0)
+    assert remote_head(clone, other_branch) == head
 
 
 @pytest.mark.parametrize("argv", [[], ["a", "b"]])

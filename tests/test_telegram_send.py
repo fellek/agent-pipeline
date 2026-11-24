@@ -8,12 +8,12 @@ from conftest import script_path, write_executable
 
 @pytest.fixture
 def telegram(tmp_path):
-    repo = tmp_path / "repo"
-    scripts = repo / ".github" / "scripts"
+    repo = tmp_path / "app"
+    scripts = tmp_path / "plugin" / "bin"
     stubs = tmp_path / "bin"
     channel = tmp_path / "home" / ".claude" / "channels" / "telegram"
     scripts.mkdir(parents=True)
-    (repo / ".pipeline").mkdir()
+    (repo / ".pipeline").mkdir(parents=True)
     stubs.mkdir()
     channel.mkdir(parents=True)
     shutil.copy(script_path("telegram-send.py"), scripts)
@@ -50,6 +50,7 @@ def telegram(tmp_path):
         def run(self, text, *buttons, env=None):
             return subprocess.run(
                 [str(scripts / "telegram-send.py"), *buttons],
+                cwd=repo,
                 input=text,
                 env={
                     "PATH": f"{stubs}:/usr/bin:/bin",

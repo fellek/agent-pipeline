@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: blocks Bash commands that push to master (exit 2)."""
+"""PreToolUse hook: blocks Bash commands that push to the default branch (exit 2).
+
+The default branch is read from origin/HEAD of the repository the push runs in;
+a push is blocked if it cannot be determined.
+"""
 
 import json
 import os
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 
-PROTECTED = "master"
+DEFAULT_BRANCH = Path(__file__).resolve().parents[1] / "bin" / "default-branch.py"
 SEPARATOR_CHARS = set("();<>|&\n")
 GIT_OPTIONS_WITH_VALUE = {
     "-C",
@@ -50,6 +55,16 @@ def current_branch(cwd):
     return result.stdout.strip()
 
 
+def default_branch(cwd):
+    try:
+        result = subprocess.run(
+            [DEFAULT_BRANCH], cwd=cwd, check=False, capture_output=True, text=True
+        )
+    except OSError:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
 def destination(refspec, cwd):
     source, _, target = refspec.lstrip("+").partition(":")
     target = target or source
@@ -70,7 +85,7 @@ def git_subcommand(args, cwd):
     return args, cwd
 
 
-def pushes_to_master(push_args, cwd):
+def pushes_to_default_branch(push_args, cwd):
     positional = []
     args = iter(push_args)
     for arg in args:
@@ -80,15 +95,18 @@ def pushes_to_master(push_args, cwd):
             next(args, None)
         elif not arg.startswith("-"):
             positional.append(arg)
+    protected = default_branch(cwd)
+    if protected is None:
+        return True
     refspecs = positional[1:]
     if not refspecs:
-        return current_branch(cwd) == PROTECTED
-    return any(targets_master(destination(refspec, cwd)) for refspec in refspecs)
+        return current_branch(cwd) == protected
+    return any(targets(destination(refspec, cwd), protected) for refspec in refspecs)
 
 
-def targets_master(target):
-    # An empty target is the matching refspec ":", a glob may expand to master.
-    return target in ("", PROTECTED) or "*" in target
+def targets(target, protected):
+    # An empty target is the matching refspec ":", a glob may expand to any branch.
+    return target in ("", protected) or "*" in target
 
 
 def is_blocked(command, cwd):
@@ -108,7 +126,7 @@ def is_blocked(command, cwd):
             cwd = os.path.join(cwd, segment[1])
         elif os.path.basename(segment[0]) == "git":
             args, git_cwd = git_subcommand(segment[1:], cwd)
-            if args[:1] == ["push"] and pushes_to_master(args[1:], git_cwd):
+            if args[:1] == ["push"] and pushes_to_default_branch(args[1:], git_cwd):
                 return True
     return False
 
@@ -118,7 +136,8 @@ def main():
     command = hook_input.get("tool_input", {}).get("command", "")
     if is_blocked(command, hook_input.get("cwd", os.getcwd())):
         print(
-            f"Pushing to {PROTECTED} is not allowed; open a pull request.",
+            "Pushing to the default branch is not allowed; open a pull request. "
+            "If origin/HEAD is not set, run: git remote set-head origin --auto",
             file=sys.stderr,
         )
         sys.exit(2)

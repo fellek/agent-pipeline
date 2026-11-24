@@ -12,7 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-PIPELINE = Path(__file__).parents[2] / ".pipeline"
+# State of the project in the working directory, not of the plugin.
+PIPELINE = Path(".pipeline")
 CHANNEL = Path.home() / ".claude" / "channels" / "telegram"
 
 

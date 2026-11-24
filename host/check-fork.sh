@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."
 mkdir -p .pipeline
 out=.pipeline/fork-check.txt
 codeword="fork-check-$RANDOM$RANDOM"

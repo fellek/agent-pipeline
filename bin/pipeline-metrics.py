@@ -13,7 +13,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-PIPELINE = Path(__file__).resolve().parents[2] / ".pipeline"
+# State of the project in the working directory, not of the plugin.
+PIPELINE = Path(".pipeline")
 STATE = PIPELINE / "state.json"
 LOG = PIPELINE / "autopilot.log"
 MARKER = "merge metrics"

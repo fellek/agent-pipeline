@@ -1,24 +1,19 @@
-import shutil
 import subprocess
 
 import pytest
-from conftest import script_path, write_executable
+from conftest import copy_scripts, write_executable
 
-IS_ACTIVE = "systemctl --user is-active --quiet autopilot\n"
-RESET_FAILED = "systemctl --user reset-failed autopilot\n"
+IS_ACTIVE = "systemctl --user is-active --quiet autopilot-app\n"
+RESET_FAILED = "systemctl --user reset-failed autopilot-app\n"
 
 
 @pytest.fixture
-def run_restart(tmp_path):
+def run_restart(tmp_path, app):
     plugin = tmp_path / "plugin"
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    for folder, script in (
-        ("bin", "autopilot-restart.sh"),
-        ("host", "autopilot-stop.sh"),
-    ):
-        (plugin / folder).mkdir(parents=True)
-        shutil.copy(script_path(script), plugin / folder)
+    copy_scripts(plugin / "bin", "autopilot-restart.sh")
+    copy_scripts(plugin / "host", "autopilot-stop.sh", "autopilot-name.sh")
     calls = tmp_path / "calls"
     write_executable(stubs / "tmux", f'echo "tmux $*" >> {calls}')
 
@@ -29,6 +24,7 @@ def run_restart(tmp_path):
         )
         result = subprocess.run(
             [str(plugin / "bin" / "autopilot-restart.sh")],
+            cwd=app,
             env={"PATH": f"{stubs}:/usr/bin:/bin", "XDG_RUNTIME_DIR": str(tmp_path)},
             check=False,
             capture_output=True,
@@ -42,7 +38,7 @@ def run_restart(tmp_path):
 def test_ends_session_when_service_is_active(run_restart):
     result, calls = run_restart(service_status=0)
     assert result.returncode == 0
-    assert calls == f"{IS_ACTIVE}{RESET_FAILED}tmux kill-session -t autopilot\n"
+    assert calls == f"{IS_ACTIVE}{RESET_FAILED}tmux kill-session -t =autopilot-app\n"
 
 
 def test_fails_without_active_service(run_restart):

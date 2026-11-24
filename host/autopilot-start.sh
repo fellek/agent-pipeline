@@ -2,21 +2,20 @@
 set -euo pipefail
 
 host=$(cd "$(dirname "$0")" && pwd)
-cd "$(dirname "$0")/../.."
-session=autopilot
+session=$("$host/autopilot-name.sh")
 channel=plugin:telegram@claude-plugins-official
 min_claude=2.1.239
 label=${1:-ready}
 
-if tmux has-session -t "$session" 2>/dev/null; then
+if tmux has-session -t "=$session" 2>/dev/null; then
   exec "$host/autopilot-status.sh"
 fi
 
-fail() { echo "autopilot: $*, see docs/autopilot.md" >&2; exit 1; }
+fail() { echo "$session: $*, see ${host%/host}/docs/autopilot.md" >&2; exit 1; }
 
 [ $# -le 1 ] && [[ $label =~ ^[^[:space:]]+$ ]] || fail "label must not contain whitespace"
 
-for cmd in claude git gh tmux bun uv; do
+for cmd in claude git gh tmux bun; do
   command -v "$cmd" >/dev/null || fail "$cmd is missing"
 done
 claude_version=$(claude --version | cut -d' ' -f1)

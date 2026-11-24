@@ -16,17 +16,18 @@ def window(percentage, reset):
 
 @pytest.fixture
 def statusline(tmp_path):
-    repo = tmp_path / "repo"
-    scripts = repo / "pipeline" / "host"
+    repo = tmp_path / "app"
+    plugin = tmp_path / "plugin"
+    scripts = plugin / "host"
     stubs = tmp_path / "bin"
     channel = tmp_path / "home" / ".claude" / "channels" / "telegram"
     scripts.mkdir(parents=True)
-    (repo / "pipeline" / "bin").mkdir()
-    (repo / ".pipeline").mkdir()
+    (plugin / "bin").mkdir()
+    (repo / ".pipeline").mkdir(parents=True)
     stubs.mkdir()
     channel.mkdir(parents=True)
     shutil.copy(script_path("autopilot-statusline.py"), scripts)
-    shutil.copy(script_path("telegram-send.py"), repo / "pipeline" / "bin")
+    shutil.copy(script_path("telegram-send.py"), plugin / "bin")
     curl_calls = tmp_path / "curl_calls"
     write_executable(
         stubs / "curl",
@@ -50,6 +51,7 @@ def statusline(tmp_path):
             payload = {} if rate_limits is None else {"rate_limits": rate_limits}
             return subprocess.run(
                 [str(scripts / "autopilot-statusline.py")],
+                cwd=repo,
                 input=json.dumps(payload),
                 env={
                     "PATH": f"{stubs}:/usr/bin:/bin",
