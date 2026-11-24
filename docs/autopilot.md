@@ -16,6 +16,13 @@ Der Bot beantwortet `/help`, `/start` und `/status` selbst (Plugin), deshalb ohn
 - `label <name>`: Auswahl-Label ab dem nächsten Issue, bis zum nächsten Start
 - `#<n> <text>`: Antwort auf eine Rückfrage zu Issue n
 
+## Einrichtung eines Projekts
+
+- `host/init-project.sh <tag>` im Wurzelverzeichnis des Projekts, aus einem Klon dieses Repositorys: fügt das Release als Submodul unter `.claude/skills/pipeline` hinzu, kopiert die Vorlagen aus [`templates/`](../templates) (MIT-0), ohne vorhandene Dateien zu überschreiben, ergänzt `.gitignore`, legt die Labels an und listet die Schritte, die von Hand bleiben (Commit, Trust-Dialog, Ruleset, automatisches Löschen der Head-Branches). Claude Code lädt das Plugin erst, wenn der Trust-Dialog im Projekt bestätigt ist.
+- Die Vorlagen liegen unter `claude/` und `github/` statt `.claude/` und `.github/`, sonst lädt Claude Code sie als Regeln dieses Repositorys.
+- `.claude/skills/pipeline/bin/check-project.py` gehört zu den Checks des Projekts: es schlägt fehl, wenn `.claude/settings.json` eine Deny-Regel der Vorlage fehlt oder `CLAUDE.md` die Zeile `@.claude/skills/pipeline/rules/workflow.md` nicht enthält. Plugins können keine Berechtigungen mitbringen, deshalb stehen sie in den Projekteinstellungen.
+- `.claude/skills/pipeline/host/bump.sh <tag>` öffnet einen PR, der das Submodul auf das Release setzt, mit den Release Notes und dem Label `infrastructure`, und kehrt danach zum vorherigen Branch zurück. `init-project.sh` setzt `submodule.recurse`, damit `git pull` und `git switch` das Submodul mitziehen und der Arbeitsbaum sauber bleibt; in anderen Klonen von Hand setzen.
+
 ## Betrieb
 
 - Eine Instanz je Projekt, jede unter einem eigenen Linux-Benutzer mit eigenem Telegram-Bot (`~/.claude/channels/telegram`) und eigenem systemd-User-Dienst. tmux-Session und Dienst heißen `autopilot-<Repository>`, der Name kommt aus der URL von `origin` ([`autopilot-name.sh`](../host/autopilot-name.sh)). Zwei Projekte mit demselben Repository-Namen (etwa ein Fork und sein Upstream) können deshalb nicht unter demselben Benutzer laufen: `install-service.sh` und `autopilot-start.sh` brechen ab, wenn Dienst oder Session schon zu einem anderen Projektverzeichnis gehören.

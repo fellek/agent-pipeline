@@ -1,0 +1,3 @@
+# Agent pipeline: autopilot state and local Claude Code settings
+.pipeline/
+.claude/settings.local.json
