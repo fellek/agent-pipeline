@@ -15,8 +15,19 @@ def pr(number, branch, closes, *reviews):
         "number": number,
         "headRefName": branch,
         "closingIssuesReferences": [{"number": n} for n in closes],
-        "reviews": [{"body": body} for body in reviews],
+        "reviews": [
+            review if isinstance(review, dict) else gate_review(number, review)
+            for review in reviews
+        ],
     }
+
+
+def gate_review(pr, verdict, association="OWNER"):
+    line = (
+        f"<!-- pipeline-attestation v1 pr={pr} sha={'a' * 40} verdict={verdict} "
+        f"session=s1 mac={'b' * 64} -->"
+    )
+    return {"body": f"Verdict: x\n\n{line}", "authorAssociation": association}
 
 
 def fake_gh(monkeypatch, prs, state="OPEN"):
@@ -62,12 +73,14 @@ def test_no_pr_gives_nulls(monkeypatch, script):
     assert result["branch"] is None
 
 
-def test_counts_only_changes_requested_reviews(monkeypatch, script):
+def test_counts_only_changes_requested_reviews_of_the_gate(monkeypatch, script):
     reviews = [
-        "Verdict: changes requested\n\nx",
-        "Verdict: approve",
-        "Verdict: changes requested",
-        "comment",
+        "changes-requested",
+        "approve",
+        "changes-requested",
+        {"body": "Verdict: changes requested", "authorAssociation": "OWNER"},
+        gate_review(7, "changes-requested", association="NONE"),
+        gate_review(8, "changes-requested"),
     ]
     fake_gh(monkeypatch, [pr(7, "b", [6], *reviews)])
 
