@@ -20,7 +20,7 @@ Report each event with Bash and carry out the actions it prints, in order:
 
 - `{"skill": <name>, "args": <args>}`: run the skill with the Skill tool and these arguments exactly, then report `started`.
 - `{"background": <command>, "timeout": <ms>}`: run the command as background Bash (`run_in_background`) with that `timeout`, then report `started`.
-- `{"stop": <task id>}`: stop that fork or task with `TaskStop`.
+- `{"stop": <task id>}`: stop that fork or task with `TaskStop`, then report `autopilot-state.py event stopped <task id>`, also if it had already ended.
 - `{"reply": <text>}`: send the text with the `reply` tool of the Telegram plugin (the script could not send it).
 
 No output: end your turn. The next Telegram message or completion notification starts a new turn. A non-zero exit of `autopilot-state.py` is a bug of the pipeline: send its error with `reply` and end your turn. If these instructions are no longer in context, read `${CLAUDE_SKILL_DIR}/SKILL.md` again.

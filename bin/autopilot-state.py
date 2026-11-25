@@ -12,6 +12,7 @@ Events:
   telegram <chat_id>     a message of the maintainer, its text on stdin
   started <task_id>      the fork or background task of the last action started
   done <task_id>         a fork or background task ended; a fork's result on stdin
+  stopped <task_id>      the task of a `stop` action was stopped
 
 Actions, one JSON object per line:
   {"skill": <name>, "args": <args>}   run the skill via the Skill tool, then `started`
@@ -89,6 +90,7 @@ DEFAULT = {
     "poller": None,
     "poll_failures": 0,
     "pending": None,
+    "retry": None,
 }
 # Fields a parked entry keeps of the state.
 PARKED_FIELDS = (
@@ -225,7 +227,7 @@ class Autopilot:
 
     def stop_poller(self):
         pid = self.task_file("poller", ".pid")
-        if pid:
+        if pid and self.s["poller"]:
             try:
                 os.kill(int(pid), signal.SIGTERM)
             except (ProcessLookupError, ValueError):
@@ -334,31 +336,55 @@ class Autopilot:
 
     def handle(self, event, args, text):
         try:
-            if event == "start":
-                self.on_start(args[0] if args else "")
-            elif event == "telegram":
-                self.stop_poller()
-                self.on_telegram(args[0], text.strip())
-            elif event == "started":
-                self.on_started(args[0])
-            elif event == "done":
-                self.on_done(args[0], text)
-            else:
-                raise ValueError(event)
+            self.dispatch(event, args, text)
         except Wait:
             pass
-        except RuntimeError as error:
-            # A failed command: keep the state as it was, so `weiter` repeats the event.
+        except Exception as error:  # noqa: BLE001, any error must keep a consistent state
+            # Keep the state as it was, so `weiter` repeats the event.
             self.s = self.before
             self.actions = [a for a in self.actions if "stop" in a]
+            waiting = self.s["waiting_for"]
+            # The task of this event has ended and sends nothing more: keep the event.
+            if waiting in RUNNING and (
+                event == "start" or event == "done" and args[0] == self.s["task_id"]
+            ):
+                self.s["retry"] = {
+                    "event": event,
+                    "args": args,
+                    "text": text,
+                    "paused": self.s["paused"],
+                    "waiting_for": waiting,
+                }
+                self.s["waiting_for"] = "resume"
             self.s["paused"] = True
             if self.s["waiting_for"] is None:
                 self.s["waiting_for"] = "resume"
+            if not isinstance(error, RuntimeError):
+                error = f"{type(error).__name__} {error}"
+            self.log(f"error {error}")
             self.send(f"{self.prefix()}Fehler: {error}, nach Behebung weiter")
         self.start_poller()
 
+    def dispatch(self, event, args, text):
+        if event == "start":
+            self.on_start(args[0] if args else "")
+        elif event == "telegram":
+            self.stop_poller()
+            self.on_telegram(args[0], text.strip())
+        elif event == "started":
+            self.on_started(args[0])
+        elif event == "done":
+            self.on_done(args[0], text)
+        elif event == "stopped":
+            self.on_stopped(args[0])
+        else:
+            raise ValueError(event)
+
     def on_start(self, label):
-        self.stop_poller()
+        # Tasks end with the session; after a reboot the pid may be another process.
+        (PIPELINE / "tasks" / "poller.pid").unlink(missing_ok=True)
+        self.s["poller"] = None
+        self.s["retry"] = None
         self.run("release-changed.sh", "record")
         self.s["label"] = label or "ready"
         self.s["pending"] = None
@@ -404,6 +430,12 @@ class Autopilot:
                     text = self.task_file("step", ".out") or ""
                 self.on_result(parse_result(text))
         # Any other end is a stopped fork or poller.
+        self.wait()
+
+    def on_stopped(self, task_id):
+        if task_id == self.s["task_id"] and self.s["waiting_for"] in RUNNING:
+            self.s.update(task_id=None, waiting_for=None)
+            self.park(self.s["park"])
         self.wait()
 
     # loop
@@ -557,7 +589,9 @@ class Autopilot:
                 result.get("OPEN_QUESTIONS") or result.get("SUMMARY", ""), hold
             )
         elif status != "done":
-            self.failure(result["SUMMARY"] if result else "Kein Ergebnisblock", hold)
+            self.failure(
+                result.get("SUMMARY", "") if result else "Kein Ergebnisblock", hold
+            )
         else:
             self.transition(step, result, hold)
         self.after_hold(hold)
@@ -665,10 +699,9 @@ class Autopilot:
             buttons = [f"#{n} {letter}" for letter in options(questions)]
         self.send(f"#{n} Rückfrage:\n{questions}", *buttons)
         if hold:
-            self.s["park"] = (
-                self.s["park"] if self.s["park"] != "manuell" else "Rückfrage"
-            )
-            self.s["park"] = self.s["park"] or "Rückfrage"
+            # A parked question waits for its answer, not for a manual `weiter`.
+            if self.s["park"] in (None, "manuell"):
+                self.s["park"] = "Rückfrage"
             self.park(self.s["park"])
         self.search_answer()
 
@@ -696,7 +729,7 @@ class Autopilot:
             answer = "\n\n".join(comments)
             self.s["question"] = None
             if self.s["park"] or self.s["paused"]:
-                self.park(self.reason("Rückfrage"), answer)
+                self.park(self.s["park"] or "Rückfrage", answer)
             self.run_step(answer)
         status = result["STATUS"] if result else None
         if status == "done":
@@ -709,14 +742,7 @@ class Autopilot:
             if self.s["paused"]:
                 self.park("Rückfrage", summary)
             self.run_step(summary)
-        self.park(self.reason("Rückfrage"))
-
-    def reason(self, default):
-        return (
-            self.s["park"]
-            if self.s["park"] and self.s["park"] != "manuell"
-            else (self.s["park"] or default)
-        )
+        self.park(self.s["park"] or "Rückfrage")
 
     # step 7 and merge
 
@@ -757,7 +783,7 @@ class Autopilot:
             self.failure(err or threads, hold)
         elif urls := [t["url"] for t in json.loads(threads)]:
             answer = "Offene Review-Threads: " + " ".join(urls)
-            self.changes_requested("", answer, hold)
+            self.changes_requested(" ".join(urls), answer, hold)
         else:
             self.set_label(self.s["issue"], "approved")
             if not hold:
@@ -799,25 +825,28 @@ class Autopilot:
         red = self.task_file("step", ".exit") != "0"
         paused = self.s["paused"]
         if red:
+            last = out.splitlines()[-1]
             detail = {
                 "missing": "kein CI-Lauf gefunden",
                 "timeout": "CI nach 45 Minuten nicht fertig",
-            }.get(out.splitlines()[-1], out)
+            }.get(last, last.removeprefix("red "))
+        # Commands that can fail first: a repeated event must not record twice.
+        state = self.ok(
+            "gh", "issue", "view", str(n), "--json", "state", "--jq", ".state"
+        )
+        url = self.ok(
+            "gh", "pr", "view", str(self.s["pr"]), "--json", "url", "--jq", ".url"
+        )
+        if red:
             self.send(
                 f"#{n} {merge['default']} rot nach Merge: {detail}", "weiter", "status"
             )
         code, _, err = self.run("pipeline-metrics.py", "record")
         if code != 0:
             self.send(f"#{n} Kennzahlen nicht erfasst: {err}")
-        state = self.ok(
-            "gh", "issue", "view", str(n), "--json", "state", "--jq", ".state"
-        )
         if state == "OPEN":
             self.run("gh", "issue", "close", str(n))
         self.set_label(n, None)
-        url = self.ok(
-            "gh", "pr", "view", str(self.s["pr"]), "--json", "url", "--jq", ".url"
-        )
         self.log("done")
         self.reset(keep_paused=False)
         if red or paused:
@@ -883,6 +912,7 @@ class Autopilot:
         if reason not in ("Rückfrage", "Patch"):
             self.send(f"#{n} geparkt ({reason})", f"#{n} weiter", "status")
         if was_paused:
+            self.s["waiting_for"] = "resume"
             self.wait()
         self.loop()
 
@@ -921,7 +951,7 @@ class Autopilot:
 
     def on_poll_exit(self):
         code = self.task_file("poller", ".exit")
-        if code is None:
+        if code is None or code.startswith("-"):
             # Killed at the limit of a background call: no failure, start it again.
             self.wait()
         if code != "0":
@@ -1041,7 +1071,7 @@ class Autopilot:
             self.act(stop=self.s["task_id"])
         self.s.update(question=None, task_id=None, waiting_for=None)
         if self.s["park"] or self.s["paused"]:
-            self.park(self.reason("Rückfrage"), text)
+            self.park(self.s["park"] or "Rückfrage", text)
         self.run_step(text)
 
     def park_command(self, command, n):
@@ -1056,14 +1086,20 @@ class Autopilot:
         if command == "park":
             self.s["park"] = "manuell"
             self.reply(f"#{n} wird nach dem Schritt geparkt")
-        if self.s["task_id"]:
-            self.act(stop=self.s["task_id"])
-        self.s.update(task_id=None, waiting_for=None)
-        self.park("abgebrochen")
+        # The fork still writes in the tree: park after it is stopped.
+        self.s["park"] = "abgebrochen"
+        self.act(stop=self.s["task_id"])
+        self.wait()
 
     def weiter(self):
         if not self.s["paused"]:
             self.reply("Läuft bereits")
+        retry = self.s["retry"]
+        if retry:
+            self.s.update(
+                retry=None, paused=retry["paused"], waiting_for=retry["waiting_for"]
+            )
+            self.dispatch(retry["event"], retry["args"], retry["text"])
         self.s["paused"] = False
         if self.s["park"]:
             self.park(self.s["park"])
@@ -1081,9 +1117,11 @@ class Autopilot:
         if match is None:
             self.reply("Kein Issue-Branch, bitte von Hand aufräumen")
         n = match.group(1)
-        code, out, _ = self.run("cleanup-tree.py", n)
-        if code != 0:
+        code, out, err = self.run("cleanup-tree.py", n)
+        if out == "clean":
             self.reply(f"#{n} Nichts zu sichern")
+        if code != 0:
+            self.reply(f"#{n} cleanup fehlgeschlagen: {err or out}")
         self.reply(f"#{n} Änderungen auf {out} gesichert, nicht gepusht")
 
     def update(self):
@@ -1128,7 +1166,6 @@ class Autopilot:
         except RuntimeError as error:
             self.reply(f"#{n} /{task} nicht gestartet: {error}")
         if self.s["issue"] is not None and not current:
-            self.s["paused"] = False
             self.park_without_loop("manuell")
         if entry is not None:
             self.s["parked"].remove(entry)
@@ -1201,10 +1238,12 @@ def load():
 
 def main(argv):
     match argv:
-        case ["event", ("start" | "telegram" | "started" | "done") as event, *args] if (
-            event == "start" and len(args) <= 1
-        ) or len(args) == 1:
-            text = "" if event in ("start", "started") else sys.stdin.read()
+        case [
+            "event",
+            ("start" | "telegram" | "started" | "done" | "stopped") as event,
+            *args,
+        ] if (event == "start" and len(args) <= 1) or len(args) == 1:
+            text = sys.stdin.read() if event in ("telegram", "done") else ""
             autopilot = Autopilot(load())
             autopilot.handle(event, args, text)
             autopilot.save()

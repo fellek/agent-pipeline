@@ -596,7 +596,7 @@ def test_merge_finishes_the_issue(pilot):
 @pytest.mark.parametrize(
     ("out", "detail"),
     [
-        ("red https://run/2", "red https://run/2"),
+        ("red https://run/2", "https://run/2"),
         ("missing", "kein CI-Lauf gefunden"),
         ("timeout", "CI nach 45 Minuten nicht fertig"),
     ],
@@ -826,8 +826,16 @@ def test_park_while_a_step_runs_parks_afterwards(pilot):
 def test_stop_stops_the_fork_and_parks(pilot):
     at_step(pilot, "issue")
     pilot.result("autopilot-poll.py", "next", out="")
-    actions = message(pilot, "stop #7")
-    assert actions[0] == {"stop": "t1"}
+    assert message(pilot, "stop #7") == [{"stop": "t1"}]
+    assert not pilot.ran("leave-branch.py")
+    assert pilot.state["parked"] == []
+    assert pilot.event("stopped", "t1") == [
+        {
+            "background": "autopilot-task.py poller autopilot-poll.py wait new_issue ready answer 7 2026-01-01T00:00:00Z",
+            "timeout": pilot.module.BACKGROUND_MS,
+        }
+    ]
+    assert pilot.ran("leave-branch.py", "issue-7-fix-the-thing")
     entry = pilot.state["parked"][0]
     assert entry["reason"] == "abgebrochen"
     assert entry["step"] == "issue"
@@ -965,7 +973,9 @@ def test_task_parks_the_current_issue(pilot):
     assert pilot.state["parked"][0]["issue"] == 7
     assert pilot.state["parked"][0]["reason"] == "manuell"
     assert pilot.state["issue"] == 9
-    assert actions[0]["skill"] == "pipeline:plan-issue"
+    assert actions == [{"skill": "pipeline:plan-issue", "args": '9 "" ""'}]
+    switches = [call for call in pilot.calls if call[:2] == ("git", "switch")]
+    assert switches[-1] == ("git", "switch", "issue-9-other")
 
 
 def test_task_only_while_paused(pilot):
@@ -1073,3 +1083,248 @@ def test_main_writes_the_state_atomically_and_prints_actions(
 def test_main_rejects_unknown_events(pilot):
     with pytest.raises(SystemExit):
         pilot.module.main(["event", "nope"])
+
+
+# Transitions while held, failures inside events
+
+
+def test_failed_release_check_is_reported_and_goes_on(pilot):
+    pilot.result("release-changed.sh", code=1, err="no tag")
+    actions = pilot.event("start", "")
+    assert pilot.texts()[0] == "Release-Prüfung fehlgeschlagen: no tag"
+    assert actions[0]["skill"] == "pipeline:plan-issue"
+
+
+@pytest.mark.parametrize(("code", "paused"), [(0, False), (1, True)])
+def test_pipeline_repository_switches_to_the_release(
+    pilot, tmp_path, monkeypatch, code, paused
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "pipeline-release").write_text("v2\n")
+    pilot.result("release-changed.sh", out="v2")
+    pilot.result(".claude/skills/pipeline/host/use-release.sh", code=code, err="bad")
+    pilot.event("start", "")
+    assert pilot.ran("autopilot-restart.sh") is not paused
+    assert pilot.state["paused"] is paused
+    if paused:
+        assert pilot.texts() == ["bad"]
+
+
+def test_found_answer_with_a_pending_park_parks_without_it(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0", park="manuell")
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, result(summary="use x"))
+    entry = pilot.state["parked"][0]
+    assert (entry["reason"], entry["answer"]) == ("manuell", None)
+
+
+def test_found_answer_while_paused_parks_with_it(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0", paused=True)
+    assert finish(pilot, result(summary="use x")) == []
+    entry = pilot.state["parked"][0]
+    assert (entry["reason"], entry["answer"]) == ("Rückfrage", "use x")
+
+
+@pytest.mark.parametrize(
+    ("held", "reason"),
+    [({"park": "manuell"}, "manuell"), ({"paused": True}, "Rückfrage")],
+)
+def test_maintainer_comment_while_held_parks_with_it(pilot, held, reason):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0", **held)
+    pilot.result("autopilot-poll.py", "next", out="")
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 7, "body": "b"}),
+    )
+    actions = finish(pilot, result("needs_input"))
+    assert f"park {reason}" in (pilot.folder / "autopilot.log").read_text()
+    if "paused" in held:
+        entry = pilot.state["parked"][0]
+        assert (entry["reason"], entry["answer"]) == (reason, "b")
+    else:
+        # The answered entry resumes at once, at the next issue boundary.
+        assert actions == [{"skill": "pipeline:plan-issue", "args": '7 "b" ""'}]
+
+
+def test_answer_for_the_current_issue_while_paused_parks_it(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0", paused=True)
+    actions = message(pilot, "#7 a")
+    assert actions == [{"stop": "t1"}]
+    entry = pilot.state["parked"][0]
+    assert (entry["reason"], entry["answer"]) == ("Rückfrage", "a) x")
+
+
+def test_setprio_done_with_a_pending_park_parks(pilot):
+    at_step(pilot, "setprio", branch=None, pr=None, park="manuell")
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, result())
+    assert pilot.state["parked"][0]["step"] == "setprio"
+    assert "ready" not in pilot.labels()
+
+
+def test_third_failure_while_paused_parks_and_waits(pilot):
+    at_step(pilot, "issue", attempts=2, paused=True)
+    assert finish(pilot, result("blocked", summary="broken")) == []
+    assert pilot.state["parked"][0]["reason"] == "Fehlversuche"
+    assert pilot.state["waiting_for"] == "resume"
+
+
+def test_fifth_review_round_while_paused_parks_and_waits(pilot):
+    at_step(pilot, "review-issue", review_rounds=4, paused=True)
+    assert finish(pilot, out=result(verdict="changes requested", summary="o")) == []
+    assert pilot.state["parked"][0]["reason"] == "Review-Limit"
+    assert "#7 Review-Limit erreicht, offene Befunde: o" in pilot.texts()
+
+
+def test_patch_while_paused_parks_and_waits(pilot):
+    at_step(pilot, "issue", paused=True)
+    assert finish(pilot, result("needs_input", patch="https://c/2")) == []
+    assert pilot.state["parked"][0]["waiting_for"] == "patch"
+
+
+def test_review_without_a_verdict_is_a_failure(pilot):
+    at_step(pilot, "review-issue")
+    actions = finish(pilot, out=result())
+    assert pilot.state["failure"] == "Kein Verdict: s"
+    assert actions[0]["background"].endswith(f"gate review 5 {'a' * 40}")
+
+
+def test_open_review_threads_name_the_threads_at_the_limit(pilot):
+    at_ci(pilot, review_rounds=4)
+    pilot.result("open-review-threads.py", out=json.dumps([{"url": "https://t/1"}]))
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, out="green", code=0)
+    assert "#7 Review-Limit erreicht, offene Befunde: https://t/1" in pilot.texts()
+
+
+def test_resume_without_a_known_pull_request_looks_it_up(pilot):
+    pilot.state = {"parked": [parked(answer="a", step="issue")]}
+    pilot.result(
+        "issue-pr.py",
+        out=json.dumps({"state": "OPEN", "pr": 6, "branch": "issue-4-x"}),
+    )
+    pilot.event("start", "")
+    assert pilot.ran("git", "pull", "--ff-only", "origin", "issue-4-x")
+    assert pilot.state["pr"] == 6
+
+
+def test_resume_after_a_patch_pulls_the_commit(pilot):
+    pilot.state = {"parked": [parked(waiting_for="patch", reason="Patch")]}
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "commit", "branch": "issue-4-x"}),
+    )
+    actions = pilot.event("start", "")
+    assert pilot.ran("git", "pull", "--ff-only", "origin", "issue-4-x")
+    assert actions[0]["args"] == '4 "Der Maintainer hat den Patch committet." ""'
+
+
+def test_cleanup_only_while_paused(pilot):
+    message(pilot, "cleanup")
+    assert pilot.texts() == ["cleanup nur in der Pause"]
+
+
+def test_failed_cleanup_is_reported(pilot):
+    pilot.state = {"paused": True, "waiting_for": "resume"}
+    pilot.result("git", "branch", "--show-current", out="issue-7-x")
+    pilot.result("cleanup-tree.py", code=1, err="no identity")
+    message(pilot, "cleanup")
+    assert pilot.texts() == ["#7 cleanup fehlgeschlagen: no identity"]
+
+
+def test_update_on_a_dirty_tree_is_refused(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    pilot.result("git", "status", "--porcelain", out=" M a.py")
+    message(pilot, "update")
+    assert pilot.sent == [(pilot.module.DIRTY, ("cleanup", "status"))]
+    assert not pilot.ran("release-changed.sh")
+
+
+def test_update_while_a_step_runs_is_refused(pilot):
+    pilot.state = {"waiting_for": None, "paused": True}
+    message(pilot, "update")
+    assert pilot.texts() == ["update nur ohne aktuelles Issue"]
+
+
+def test_weiter_when_not_paused(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    message(pilot, "weiter")
+    assert pilot.texts() == ["Läuft bereits"]
+
+
+def test_failed_command_in_a_done_event_is_repeated_by_weiter(pilot):
+    at_step(pilot, "issue")
+    pilot.result("gh", "pr", "list", code=1, err="api down")
+    assert finish(pilot, text=result()) == []
+    assert pilot.texts() == ["#7 Fehler: api down, nach Behebung weiter"]
+    assert pilot.state["paused"] is True
+    assert pilot.state["waiting_for"] == "resume"
+    assert pilot.state["step"] == "issue"
+    pilot.result("gh", "pr", "list", out="5")
+    actions = message(pilot, "weiter")
+    assert pilot.state["retry"] is None
+    assert pilot.state["step"] == "review-issue"
+    assert pilot.state["paused"] is False
+    assert actions[0]["background"].endswith(f"gate review 5 {'a' * 40}")
+
+
+def test_failed_command_after_the_merge_wait_records_once(pilot):
+    at_merge_ci(pilot)
+    pilot.result("gh", "issue", "view", "7", "--json", "state", code=1, err="down")
+    finish(pilot, out="green", code=0)
+    assert not pilot.ran("pipeline-metrics.py")
+    pilot.result("gh", "issue", "view", "7", "--json", "state", out="OPEN")
+    pilot.result("autopilot-poll.py", "next", out="")
+    message(pilot, "weiter")
+    assert pilot.ran("pipeline-metrics.py", "record")
+    assert pilot.state["issue"] is None
+
+
+def test_failed_command_in_a_restart_is_repeated_by_weiter(pilot):
+    at_step(pilot, "review-issue")
+    pilot.result("gh", "pr", "view", "5", "--json", "headRefOid", code=1, err="down")
+    assert pilot.event("start", "") == []
+    assert pilot.state["waiting_for"] == "resume"
+    pilot.result("gh", "pr", "view", "5", "--json", "headRefOid", out="a" * 40)
+    actions = message(pilot, "weiter")
+    assert actions[0]["background"].endswith(f"gate review 5 {'a' * 40}")
+
+
+def test_unexpected_error_keeps_the_state_and_pauses(pilot):
+    at_step(pilot, "issue")
+    pilot.result("gh", "pr", "list", out="five")
+    assert finish(pilot, text=result()) == []
+    assert pilot.texts()[0].startswith("#7 Fehler: ValueError ")
+    assert pilot.state["step"] == "issue"
+    assert pilot.state["paused"] is True
+
+
+def test_poller_ended_by_a_signal_starts_again(pilot):
+    pilot.state = {"waiting_for": "new_issue", "poller": "p1"}
+    pilot.task("poller", "", code=-15)
+    actions = pilot.event("done", "p1")
+    assert actions[0]["background"].startswith("autopilot-task.py poller")
+    assert pilot.state["poll_failures"] == 0
+
+
+def test_start_does_not_kill_a_stale_poller_pid(pilot, tmp_path, monkeypatch):
+    killed = []
+    monkeypatch.setattr(pilot.module.os, "kill", lambda *a: killed.append(a))
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "poller.pid").write_text("123\n")
+    pilot.state = {"waiting_for": "new_issue", "poller": "p1"}
+    pilot.event("start", "")
+    message(pilot, "status")
+    assert killed == []
+    assert not (tmp_path / "tasks" / "poller.pid").exists()
+
+
+def test_stopped_task_that_already_ended_is_ignored(pilot):
+    at_step(pilot, "issue", park="abgebrochen")
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, text=result())
+    assert pilot.state["parked"][0]["reason"] == "abgebrochen"
+    assert pilot.event("stopped", "t1") == []
