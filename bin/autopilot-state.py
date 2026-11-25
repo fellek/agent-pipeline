@@ -107,7 +107,7 @@ PARKED_FIELDS = (
     "events_since",
     "question",
 )
-RUNNING = ("step", "ci", "merge_ci")
+RUNNING = ("step", "review_ci", "ci", "merge_ci")
 # The longest background call: two CI waits of 45 minutes each.
 BACKGROUND_MS = 7_200_000
 DIRTY = "Ungesicherte Änderungen im Arbeitsbaum, cleanup sichert sie auf einem Branch"
@@ -397,6 +397,8 @@ class Autopilot:
         # A fork or task ends with the session: a CI wait starts again, a step reruns.
         if waiting in RUNNING:
             self.s["task_id"] = None
+        if waiting == "review_ci":
+            self.start_review_ci()
         if waiting == "ci":
             self.start_ci()
         if waiting == "merge_ci":
@@ -427,7 +429,9 @@ class Autopilot:
         elif task_id == self.s["task_id"] and self.s["waiting_for"] in RUNNING:
             self.s["task_id"] = None
             waiting, self.s["waiting_for"] = self.s["waiting_for"], None
-            if waiting == "ci":
+            if waiting == "review_ci":
+                self.on_review_ci()
+            elif waiting == "ci":
                 self.on_ci()
             elif waiting == "merge_ci":
                 self.after_merge_ci()
@@ -669,9 +673,15 @@ class Autopilot:
                 ".[0].number",
             )
             self.s["pr"] = int(pr) if pr else None
-            self.change_step("review-issue")
-        elif step == "fix-review":
-            self.change_step("review-issue")
+        if step in ("issue", "fix-review"):
+            if not self.s["pr"]:
+                self.failure("Kein Pull Request zum Branch", hold)
+                return
+            if hold:
+                # The review judges the CI runs after the pause.
+                self.change_step("review-issue")
+                return
+            self.start_review_ci()
         elif step == "review-issue":
             verdict = result.get("VERDICT", "")
             if verdict == "approve":
@@ -802,6 +812,34 @@ class Autopilot:
             self.failure(err or out)
             return
         self.start_ci()
+
+    def start_review_ci(self):
+        """CI before the review, so a red run costs no review."""
+        self.s["head"] = self.head_sha()
+        self.background(f"step watch-ci.py {self.s['branch']} {self.s['head']}")
+        self.s["waiting_for"] = "review_ci"
+        self.s["pending"] = "step"
+        self.wait()
+
+    def on_review_ci(self):
+        hold = self.s["paused"] or self.s["park"]
+        out = self.task_file("step", ".out") or ""
+        lines = out.splitlines()
+        if self.task_file("step", ".exit") == "0" and lines[-1:] == ["green"]:
+            self.change_step("review-issue")
+            if not hold:
+                self.run_step()
+        elif red := [
+            line.removeprefix("red ") for line in lines if line.startswith("red ")
+        ]:
+            if self.s["step"] == "issue":
+                self.change_step("fix-review")
+            self.failure(
+                f"CI rot: {' '.join(red)} (Log: gh run view <id> --log-failed)", hold
+            )
+        else:
+            self.failure(out or "CI ohne Ergebnis", hold)
+        self.after_hold(hold)
 
     def start_ci(self):
         self.s["head"] = self.head_sha()
