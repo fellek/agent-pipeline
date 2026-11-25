@@ -46,7 +46,9 @@ def test_rejects_two_file_flags():
 
 
 def test_runs_the_gate_with_the_file_on_stdin(tmp_path, monkeypatch):
-    body = tmp_path / "b.md"
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pipeline").mkdir()
+    body = tmp_path / ".pipeline" / "b.md"
     body.write_text("text with `code` and $HOME\n")
     ran = {}
 
@@ -58,9 +60,27 @@ def test_runs_the_gate_with_the_file_on_stdin(tmp_path, monkeypatch):
     monkeypatch.setattr(shim.os, "execvp", execvp)
     saved = shim.os.dup(0)
     try:
-        shim.main(["issue", "comment", "5", "--body-file", str(body)])
+        shim.main(["issue", "comment", "5", "--body-file", ".pipeline/b.md"])
     finally:
         shim.os.dup2(saved, 0)
         shim.os.close(saved)
     assert ran["argv"] == [*shim.GATE, "issue", "comment", "5", "--body-file", "-"]
     assert ran["stdin"] == "text with `code` and $HOME\n"
+
+
+@pytest.mark.parametrize("name", ["outside", "link", "folder", "missing"])
+def test_opens_only_a_regular_file_under_pipeline(tmp_path, monkeypatch, name):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pipeline" / "sub").mkdir(parents=True)
+    secret = tmp_path / "secret"
+    secret.write_text("token")
+    path = {
+        "outside": secret,
+        "link": tmp_path / ".pipeline" / "b.md",
+        "folder": tmp_path / ".pipeline" / "sub",
+        "missing": tmp_path / ".pipeline" / "none.md",
+    }[name]
+    if name == "link":
+        path.symlink_to(secret)
+    with pytest.raises(SystemExit):
+        shim.open_pipeline_file(str(path))

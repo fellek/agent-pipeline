@@ -4,7 +4,8 @@
 The plan comment starts with PLAN. A trusted comment with PLAN and trust.MARKER
 (which the gate appends) is the pipeline's own; the latest one is edited, so a
 rerun leaves one plan on the issue. Prints the comment's URL. The plan comes in
-a file, as text on stdin would keep the call in the sandbox (gh-shim.py).
+a file under .pipeline/, as text on stdin would keep the call in the sandbox
+(gh-shim.py); outside the sandbox, any other path could post a credential.
 
 Usage:
   post-plan.py <issue> <file>
@@ -46,11 +47,25 @@ def plan_comment(number):
     return own[-1]["id"] if own else None
 
 
+def read_plan(path):
+    top = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    folder = Path(top or ".", ".pipeline").resolve()
+    real = Path(path).resolve()
+    if folder not in real.parents or not real.is_file():
+        sys.exit(f"post-plan.py: {path} is no file under .pipeline/")
+    return real.read_text()
+
+
 def main(argv):
     if len(argv) != 2 or not argv[0].isdigit():
         sys.exit(__doc__)
     number, path = argv
-    body = json.dumps({"body": f"{PLAN}\n{Path(path).read_text().strip()}"})
+    body = json.dumps({"body": f"{PLAN}\n{read_plan(path).strip()}"})
     found = plan_comment(number)
     if found is None:
         args = (

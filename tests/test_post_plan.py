@@ -47,9 +47,10 @@ class FakeIssue:
 
 def plan(post, monkeypatch, capsys, issue, text, tmp_path):
     monkeypatch.setattr(post, "gh", issue.gh)
-    path = tmp_path / "plan.md"
-    path.write_text(text)
-    post.main(["7", str(path)])
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pipeline").mkdir(exist_ok=True)
+    (tmp_path / ".pipeline" / "plan.md").write_text(text)
+    post.main(["7", ".pipeline/plan.md"])
     return capsys.readouterr().out.strip()
 
 
@@ -107,3 +108,18 @@ def test_rejects_bad_arguments(post, argv):
         post.main(argv)
 
     assert exit.value.code == post.__doc__
+
+
+@pytest.mark.parametrize("name", ["outside", "link"])
+def test_reads_only_a_file_under_pipeline(post, tmp_path, monkeypatch, name):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pipeline").mkdir()
+    secret = tmp_path / "secret"
+    secret.write_text("token")
+    path = secret
+    if name == "link":
+        path = tmp_path / ".pipeline" / "plan.md"
+        path.symlink_to(secret)
+    with pytest.raises(SystemExit) as exit:
+        post.main(["7", str(path)])
+    assert "no file under .pipeline/" in exit.value.code
