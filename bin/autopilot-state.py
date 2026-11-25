@@ -111,6 +111,8 @@ DEFAULT = {
     # Started forks of the UTC day, against DAY_FORKS.
     "day": None,
     "day_forks": 0,
+    # Branches the last prune listed; prune ja deletes only these.
+    "prune": [],
 }
 # Fields a parked entry keeps of the state.
 PARKED_FIELDS = (
@@ -143,7 +145,7 @@ DIRTY = "Ungesicherte Änderungen im Arbeitsbaum, cleanup sichert sie auf einem 
 PAUSED = "Pausiert, weiter setzt fort"
 COMMAND = re.compile(
     r"^(?:#(?P<answer>\d+)\s+(?P<text>.+)"
-    r"|(?P<simple>help|status|pause|weiter|cleanup|update|rollback|/verbose)"
+    r"|(?P<simple>help|status|pause|weiter|cleanup|update|rollback|prune|prune ja|/verbose)"
     r"|(?P<park>park|stop)\s+#(?P<park_n>\d+)"
     r"|label\s+(?P<label>\S+)"
     r"|/(?P<task>[\w-]+)(?:\s+(?P<task_n>\d+))?)$",
@@ -1009,6 +1011,8 @@ class Autopilot:
         default = self.default_branch()
         self.ok("git", "switch", default)
         self.ok("git", "pull", "--ff-only")
+        # Stale remote-tracking refs only clutter; a failed prune must not stop the merge.
+        self.run("git", "fetch", "--prune", "origin")
         sha = self.ok(
             "gh",
             "pr",
@@ -1228,6 +1232,10 @@ class Autopilot:
             self.update(simple)
         if simple == "cleanup":
             self.cleanup()
+        if simple == "prune":
+            self.prune()
+        if simple == "prune ja":
+            self.prune_confirmed()
         if match["task"]:
             self.task(match["task"], match["task_n"])
         self.reply(PAUSED)
@@ -1334,6 +1342,56 @@ class Autopilot:
         if code != 0:
             self.reply(f"#{n} cleanup fehlgeschlagen: {err or out}")
         self.reply(f"#{n} Änderungen auf {out} gesichert, nicht gepusht")
+
+    def merged_branches(self):
+        """Local issue branches whose tip is the head of a merged PR."""
+        merged = {
+            (pr["headRefName"], pr["headRefOid"])
+            for pr in json.loads(
+                self.ok(
+                    "gh",
+                    "pr",
+                    "list",
+                    "--state",
+                    "merged",
+                    "--limit",
+                    "1000",
+                    "--json",
+                    "headRefName,headRefOid",
+                )
+                or "[]"
+            )
+        }
+        current = self.current_branch()
+        # A tip past the merged head holds commits the squash merge lacks.
+        return [
+            name
+            for name, tip in (
+                line.split()
+                for line in self.ok(
+                    "git",
+                    "for-each-ref",
+                    "--format=%(refname:short) %(objectname)",
+                    "refs/heads/issue-*",
+                ).splitlines()
+            )
+            if (name, tip) in merged and name != current
+        ]
+
+    def prune(self):
+        self.s["prune"] = self.merged_branches()
+        if not self.s["prune"]:
+            self.reply("Keine Issue-Branches mit gemergtem PR")
+        self.reply("Löschen? " + ", ".join(self.s["prune"]), "prune ja", "status")
+
+    def prune_confirmed(self):
+        branches = [b for b in self.merged_branches() if b in self.s["prune"]]
+        self.s["prune"] = []
+        if not branches:
+            self.reply("Nichts zu löschen, erst prune senden")
+        # -d refuses a squash-merged branch; merged_branches checked the tip.
+        self.ok("git", "branch", "-D", *branches)
+        self.reply("Gelöscht: " + ", ".join(branches))
 
     def update(self, command):
         if self.s["issue"] is not None or self.s["waiting_for"] not in (
