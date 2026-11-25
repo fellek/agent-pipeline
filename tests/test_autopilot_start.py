@@ -3,7 +3,17 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import copy_scripts, project, write_executable
+from conftest import ROOT, copy_scripts, project, write_executable
+
+VERSIONS = dict(
+    line.split("=", 1)
+    for line in (ROOT / "host" / "versions.sh").read_text().splitlines()
+    if "=" in line
+)
+
+
+def plugins(version=VERSIONS["telegram_plugin"]):
+    return json.dumps([{"id": "telegram@claude-plugins-official", "version": version}])
 
 
 @pytest.fixture
@@ -12,7 +22,11 @@ def run_start(tmp_path, app):
     stubs = tmp_path / "bin"
     stubs.mkdir()
     copy_scripts(
-        scripts, "autopilot-start.sh", "autopilot-name.sh", "require-project-root.sh"
+        scripts,
+        "autopilot-start.sh",
+        "autopilot-name.sh",
+        "require-project-root.sh",
+        "versions.sh",
     )
     tmux_args = tmp_path / "tmux_args"
     write_executable(
@@ -24,13 +38,15 @@ def run_start(tmp_path, app):
     )
     effort_level = tmp_path / "effort_level"
     watchdog = tmp_path / "watchdog"
+    updater = tmp_path / "updater"
     write_executable(
         stubs / "claude",
         f"""case "$1" in
-  --version) echo "2.1.239 (Claude Code)" ;;
-  plugin) echo telegram ;;
+  --version) echo "${{CLAUDE_VERSION:-{VERSIONS["claude_code"]}}} (Claude Code)" ;;
+  plugin) printf '%s\n' "${{PLUGINS:-$DEFAULT_PLUGINS}}" ;;
   *) echo "${{CLAUDE_CODE_EFFORT_LEVEL-unset}}" > {effort_level}
-     echo "${{CLAUDE_CODE_RETRY_WATCHDOG-unset}}" > {watchdog} ;;
+     echo "${{CLAUDE_CODE_RETRY_WATCHDOG-unset}}" > {watchdog}
+     echo "${{DISABLE_AUTOUPDATER-unset}}" > {updater} ;;
 esac""",
     )
     write_executable(stubs / "loginctl", "echo yes")
@@ -60,6 +76,7 @@ esac""",
                 "TELEGRAM_OUT": str(tmp_path / "telegram"),
                 "PIPELINE_GATE": str(scripts / "gate.py"),
                 "HOME": str(tmp_path / "home"),
+                "DEFAULT_PLUGINS": plugins(),
                 **(env or {}),
             },
             check=False,
@@ -67,7 +84,7 @@ esac""",
             text=True,
         )
         lines = tmux_args.read_text().splitlines() if tmux_args.exists() else []
-        return result, lines, effort_level, watchdog
+        return result, lines, effort_level, watchdog, updater
 
     return run
 
@@ -98,13 +115,13 @@ def test_starts_session_with_model_and_effort(run_start):
 
 
 def test_removes_effort_level_from_session_environment(run_start):
-    result, _, effort_level, _ = run_start(env={"CLAUDE_CODE_EFFORT_LEVEL": "high"})
+    result, _, effort_level, *_ = run_start(env={"CLAUDE_CODE_EFFORT_LEVEL": "high"})
     assert result.returncode == 0, result.stderr
     assert effort_level.read_text().strip() == "unset"
 
 
 def test_starts_session_with_retry_watchdog(run_start):
-    result, _, _, watchdog = run_start()
+    result, _, _, watchdog, _ = run_start()
     assert result.returncode == 0, result.stderr
     assert watchdog.read_text().strip() == "1"
 
@@ -268,3 +285,27 @@ def test_raises_the_bash_timeouts_of_the_session(run_start):
     assert result.returncode == 0, result.stderr
     assert "BASH_DEFAULT_TIMEOUT_MS=600000" in tmux_args
     assert "BASH_MAX_TIMEOUT_MS=3600000" in tmux_args
+
+
+def test_session_runs_without_the_auto_updater(run_start):
+    result, *_, updater = run_start()
+
+    assert result.returncode == 0, result.stderr
+    assert updater.read_text() == "1\n"
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ({"CLAUDE_VERSION": "2.1.999"}, "claude 2.1.999 is not"),
+        ({"PLUGINS": plugins("0.0.8")}, "Telegram plugin 0.0.8 is not"),
+        ({"PLUGINS": "[]"}, "Telegram plugin is not installed"),
+    ],
+    ids=["claude", "plugin", "no_plugin"],
+)
+def test_refuses_other_versions(run_start, env, message):
+    result, tmux_args, *_ = run_start(env=env)
+
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert tmux_args == []

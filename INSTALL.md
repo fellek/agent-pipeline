@@ -11,10 +11,10 @@ Als root:
 
 Als Projekt-Benutzer:
 
-3. `claude` (mindestens 2.1.239) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`.
+3. `claude` in der Version aus [`host/versions.sh`](host/versions.sh) (`claude install <version>`) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`. Damit `claude` außerhalb des Autopiloten nicht von selbst aktualisiert, in `~/.claude/settings.json` `"env": {"DISABLE_AUTOUPDATER": "1"}` setzen; der Autopilot setzt es selbst. Eine neue Pipeline-Version kann eine andere Version verlangen, dann erneut `claude install <version>`.
 4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
 
-`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `sudo`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, das Gate, dass der Benutzer keinen eigenen Token hat, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
+`autopilot-start.sh` prüft `claude` und das Telegram-Plugin auf die Versionen aus `host/versions.sh`, `git`, `gh`, `sudo`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, das Gate, dass der Benutzer keinen eigenen Token hat, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
 
 ## 2. GitHub und Gate (als root)
 
@@ -50,7 +50,7 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 ## 6. Telegram (als Projekt-Benutzer)
 
 1. Bei [@BotFather](https://t.me/BotFather) `/newbot` senden und den Token kopieren. Jedes Projekt braucht einen eigenen Bot.
-2. In `claude`: `/plugin install telegram@claude-plugins-official` (User-Scope), dann `/telegram:configure <token>`. Der Token landet in `~/.claude/channels/telegram/.env`, nicht im Repository.
+2. In `claude`: `/plugin install telegram@claude-plugins-official` (User-Scope, in der Version aus `host/versions.sh`; unter `/plugin`, Marketplaces, das Auto-Update des Marketplaces ausschalten), dann `/telegram:configure <token>`. Der Token landet in `~/.claude/channels/telegram/.env`, nicht im Repository.
 3. Session beenden und `claude --channels plugin:telegram@claude-plugins-official` starten. Dem Bot schreiben, den Code mit `/telegram:access pair <code>` bestätigen, danach `/telegram:access policy allowlist`, damit nur der Maintainer den Bot erreicht.
 4. Session beenden.
 
