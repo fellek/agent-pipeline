@@ -106,6 +106,7 @@ PARKED_FIELDS = (
     "pr",
     "step",
     "review_rounds",
+    "sync_rounds",
     "attempts_per_step",
     "questions",
     "events_since",
@@ -808,7 +809,8 @@ class Autopilot:
         )
         if mergeable != "MERGEABLE":
             return True
-        rules = f"repos/{{owner}}/{{repo}}/rules/branches/{quote(self.default_branch(), safe='')}"
+        branch = quote(self.default_branch(), safe="")
+        rules = f"repos/{{owner}}/{{repo}}/rules/branches/{branch}?per_page=100"
         strict = self.ok(
             "gh",
             "api",
@@ -831,10 +833,11 @@ class Autopilot:
                 self.park("Default-Branch zu oft nachgezogen")
             # Without a change to the files of the pull request the approve carries over.
             head = self.ok("git", "rev-parse", "HEAD")
-            carried, _, _ = self.run("gate", "carry", str(self.s["pr"]), head)
+            carried, out, err = self.run("gate", "carry", str(self.s["pr"]), head)
             if carried == 0:
                 self.log("approve carried")
                 self.start_ci()
+            self.log(f"review again: {err or out}")
             self.run_step()
         if out == "conflict":
             self.conflict()

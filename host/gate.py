@@ -820,7 +820,10 @@ def carry(project, pr, sha):
         != attestation.APPROVE
     ):
         raise Refused(f"no attested approve on {approved}")
-    default = pull["base"]["ref"]
+    # Not the base of the pull request: the session can point it at its own branch.
+    default = project.gh_json("api", f"repos/{project.repo}")["default_branch"]
+    if pull["base"]["ref"] != default:
+        raise Refused(f"#{pr} targets {pull['base']['ref']}, not {default}")
     if git("merge-base", "--is-ancestor", merged, f"refs/heads/{default}")[0] != 0:
         raise Refused(f"{merged} is not on {default}")
     # The tree of a clean merge, so a merge commit cannot carry changes of its own.
@@ -828,9 +831,14 @@ def carry(project, pr, sha):
     if code != 0 or tree.split()[0] != git("rev-parse", f"{sha}^{{tree}}")[1]:
         raise Refused(f"{sha} is not a clean merge of {approved} and {merged}")
     base = git("merge-base", approved, merged)[1]
-    ours = set(git("diff", "--name-only", base, approved)[1].split())
-    theirs = set(git("diff", "--name-only", base, merged)[1].split())
-    if both := sorted(ours & theirs):
+    # Without renames, so an edit of the default branch cannot move into a renamed file.
+    ours = set(
+        git("diff", "--no-renames", "--name-only", "-z", base, approved)[1].split("\0")
+    )
+    theirs = set(
+        git("diff", "--no-renames", "--name-only", "-z", base, merged)[1].split("\0")
+    )
+    if both := sorted((ours & theirs) - {""}):
         raise Refused(f"{default} changed files of the pull request: {' '.join(both)}")
     text = (
         f"Approve von {approved} übernommen: {sha} merged nur {default} ({merged}), "

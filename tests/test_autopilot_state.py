@@ -1481,7 +1481,12 @@ def test_restart_with_a_pending_park_checks_the_refs(pilot):
 def test_mergeable_pull_request_skips_the_default_branch(pilot):
     at_step(pilot, "review-issue")
     pilot.result("gh", "pr", "view", "5", "--json", "mergeable", out="MERGEABLE")
-    pilot.result("gh", "api", "repos/{owner}/{repo}/rules/branches/main", out="false")
+    pilot.result(
+        "gh",
+        "api",
+        "repos/{owner}/{repo}/rules/branches/main?per_page=100",
+        out="false",
+    )
     actions = finish(pilot, out=result(verdict="approve"))
     assert not pilot.ran("merge-default-branch.py")
     assert pilot.state["waiting_for"] == "ci"
@@ -1491,7 +1496,9 @@ def test_mergeable_pull_request_skips_the_default_branch(pilot):
 def test_required_up_to_date_branch_merges_the_default_branch(pilot):
     at_step(pilot, "review-issue")
     pilot.result("gh", "pr", "view", "5", "--json", "mergeable", out="MERGEABLE")
-    pilot.result("gh", "api", "repos/{owner}/{repo}/rules/branches/main", out="true")
+    pilot.result(
+        "gh", "api", "repos/{owner}/{repo}/rules/branches/main?per_page=100", out="true"
+    )
     finish(pilot, out=result(verdict="approve"))
     assert pilot.ran("merge-default-branch.py")
 
@@ -1516,3 +1523,12 @@ def test_too_many_merges_of_the_default_branch_park(pilot):
     entry = pilot.state["parked"][0]
     assert entry["reason"] == "Default-Branch zu oft nachgezogen"
     assert entry["step"] == "review-issue"
+
+
+@pytest.mark.parametrize("mergeable", ["CONFLICTING", "UNKNOWN"])
+def test_not_mergeable_pull_request_merges_the_default_branch(pilot, mergeable):
+    at_step(pilot, "review-issue")
+    pilot.result("gh", "pr", "view", "5", "--json", "mergeable", out=mergeable)
+    finish(pilot, out=result(verdict="approve"))
+    assert pilot.ran("merge-default-branch.py")
+    assert not pilot.ran("gh", "api")

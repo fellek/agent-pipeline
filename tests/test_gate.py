@@ -808,6 +808,9 @@ def carrying(gate, project, monkeypatch, tmp_path, git_identity):
     monkeypatch.setattr(
         gate, "post_review", lambda p, pr, sha, body, c: state["posted"].append(body)
     )
+    monkeypatch.setattr(
+        project, "gh_json", lambda *args: {"default_branch": "main"}, raising=False
+    )
     return {"repo": repo, "approved": approved, "head": head, **state}
 
 
@@ -852,3 +855,30 @@ def test_carry_refuses_a_merge_with_changes_of_its_own(gate, project, carrying):
 def test_carry_refuses_a_commit_that_is_no_merge(gate, project, carrying):
     with pytest.raises(gate.Refused, match="not a merge commit"):
         gate.carry(project, 5, carrying["approved"])
+
+
+def test_carry_refuses_a_pull_request_on_another_base(
+    gate, project, carrying, monkeypatch
+):
+    monkeypatch.setattr(
+        gate, "pull_request", lambda p, pr, sha: pull(sha=sha, base="issue-9")
+    )
+    with pytest.raises(gate.Refused, match="targets issue-9, not main"):
+        gate.carry(project, 5, carrying["head"])
+
+
+def test_carry_refuses_an_edit_moved_into_a_renamed_file(gate, project, carrying):
+    repo = carrying["repo"]
+    git(repo, "switch", "-q", "main")
+    commit(repo, "g", "1\n2\n3\n4\n5\n6\n")
+    git(repo, "switch", "-q", "-c", "issue-6")
+    git(repo, "mv", "g", "h")
+    git(repo, "commit", "-q", "-m", "rename")
+    approved = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-q", "main")
+    commit(repo, "g", "1\n2\n3\n4\n5\nsix\n")
+    git(repo, "switch", "-q", "issue-6")
+    git(repo, "merge", "-q", "--no-edit", "main")
+    carrying["reviews"][:] = [attested(sha=approved)]
+    with pytest.raises(gate.Refused, match="changed files of the pull request: g"):
+        gate.carry(project, 5, git(repo, "rev-parse", "HEAD"))
