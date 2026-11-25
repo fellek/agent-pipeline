@@ -1,0 +1,46 @@
+name: release
+
+# Tags main as a GitHub release with generated notes once the checks pass. bump.sh and
+# update-pipeline.sh read releases, not bare tags.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag, must be v<version> of .claude-plugin/plugin.json
+        required: true
+      prerelease:
+        description: Mark as pre-release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Fails instead of skipping, so a run from another ref does not look like a release.
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "$GITHUB_REF" = refs/heads/main ] || { echo "release only from main, not $GITHUB_REF" >&2; exit 1; }'
+
+  checks:
+    needs: main
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match version $version of plugin.json" >&2; exit 1; }
+          flag=()
+          [ "$PRERELEASE" != true ] || flag=(--prerelease)
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes "${flag[@]}"
