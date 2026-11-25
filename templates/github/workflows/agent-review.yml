@@ -1,10 +1,10 @@
 name: agent-review
 
+# The only source of the required check `agent-review`; agent-review-sync.yml
+# re-runs it after a review.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  pull_request_review:
-    types: [submitted, dismissed]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
