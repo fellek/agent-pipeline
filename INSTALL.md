@@ -6,7 +6,13 @@ Von einem frischen Linux-Host mit systemd zu einem laufenden Autopilot-Dienst f�
 
 Als root:
 
-1. Einen Linux-Benutzer je Projekt anlegen und `loginctl enable-linger <benutzer>` ausführen, damit sein Dienst ohne Anmeldung läuft.
+1. Einen Linux-Benutzer je Projekt mit Linger anlegen, damit sein Dienst ohne Anmeldung läuft; er ist im Folgenden `<benutzer>`:
+
+   ```
+   sudo useradd -m -s /bin/bash autopilot
+   sudo loginctl enable-linger autopilot
+   ```
+
 2. `git`, `gh`, `sudo`, `tmux`, `python3` (für die Skripte in `bin/`, `host/` und `hooks/`) sowie `bubblewrap` und `socat` (für die Bash-Sandbox) installieren. Unter Ubuntu ab 24.04 braucht `bwrap` bei `kernel.apparmor_restrict_unprivileged_userns = 1` ein AppArmor-Profil, siehe die Sandbox-Doku von Claude Code.
 
 Als Projekt-Benutzer:
@@ -69,4 +75,4 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 
 ## Weiteres Projekt auf demselben Host
 
-Für jedes weitere Projekt als root einen eigenen Linux-Benutzer mit Linger anlegen (1.1), dann als dieser Benutzer `claude` und `bun` installieren (1.3) und alle weiteren Schritte mit eigenem Token (`install-gate.sh` für diesen Benutzer, das Gate selbst bleibt geteilt), eigenem Review-Schlüssel und eigenem Telegram-Bot wiederholen; jeder Benutzer hat seinen eigenen Dienst ([Betrieb](docs/autopilot.md#betrieb)).
+Für jedes weitere Projekt als root einen eigenen Linux-Benutzer mit Linger anlegen (1.1, mit einem anderen Namen statt `autopilot`), dann als dieser Benutzer `claude` und `bun` installieren (1.3) und alle weiteren Schritte mit eigenem Token (`install-gate.sh` für diesen Benutzer, das Gate selbst bleibt geteilt), eigenem Review-Schlüssel und eigenem Telegram-Bot wiederholen; jeder Benutzer hat seinen eigenen Dienst ([Betrieb](docs/autopilot.md#betrieb)).
