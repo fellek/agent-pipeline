@@ -42,7 +42,11 @@ def fake_gh(monkeypatch, private, rules):
 def test_complete_rules_pass_silently(monkeypatch, capsys, ruleset):
     calls = fake_gh(monkeypatch, False, COMPLETE)
     assert run_main(ruleset, capsys, "main") == ("", 0)
-    assert calls[1] == ["gh", "api", "repos/{owner}/{repo}/rules/branches/main"]
+    assert calls[1] == [
+        "gh",
+        "api",
+        "repos/{owner}/{repo}/rules/branches/main?per_page=100",
+    ]
 
 
 def test_rules_from_several_rulesets_count_together(monkeypatch, capsys, ruleset):
@@ -109,7 +113,16 @@ def test_public_repository_fails_naming_the_missing_rules(
     assert error.value.code == f"the default branch main lacks the rules: {missing}"
 
 
-def test_private_repository_only_warns(monkeypatch, capsys, ruleset):
+def test_private_repository_with_incomplete_rules_fails(monkeypatch, ruleset):
+    fake_gh(monkeypatch, True, COMPLETE[:1])
+    with pytest.raises(SystemExit) as error:
+        ruleset.main(["main"])
+    assert (
+        "lacks the rules: required_status_checks with agent-review" in error.value.code
+    )
+
+
+def test_private_repository_without_rules_only_warns(monkeypatch, capsys, ruleset):
     fake_gh(monkeypatch, True, [])
     out, code = run_main(ruleset, capsys, "main")
     assert code == 0
@@ -129,7 +142,9 @@ def test_failing_gh_names_its_error(monkeypatch, ruleset):
 def test_branch_name_is_quoted(monkeypatch, capsys, ruleset):
     calls = fake_gh(monkeypatch, False, COMPLETE)
     run_main(ruleset, capsys, "release/1")
-    assert calls[1][-1] == "repos/{owner}/{repo}/rules/branches/release%2F1"
+    assert (
+        calls[1][-1] == "repos/{owner}/{repo}/rules/branches/release%2F1?per_page=100"
+    )
 
 
 def test_usage_without_branch(ruleset):

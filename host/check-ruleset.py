@@ -2,11 +2,12 @@
 """Check the rules GitHub applies to the default branch of the project.
 
 Required: a pull request, the status checks `agent-review` and at least one
-other check, and blocked force pushes. GitHub enforces rulesets of public
-repositories; a private one without a plan that enforces them gets no rules, so
-there a missing rule only warns: the gate of the host is the protection there.
+other check, and blocked force pushes. GitHub returns no rules for a private
+repository without a plan that enforces rulesets, so there no rules at all only
+warns: the gate of the host is the protection there.
 
-Prints the missing rules. Exits 1 for a public repository with a missing rule.
+Prints the missing rules. Exits 1 if a rule is missing, unless the repository is
+private and has no rules.
 
 Usage:
   check-ruleset.py <branch>
@@ -59,6 +60,7 @@ def main(argv):
         private = gh_api("repos/{owner}/{repo}")["private"]
         rules = gh_api(
             f"repos/{{owner}}/{{repo}}/rules/branches/{quote(branch, safe='')}"
+            "?per_page=100"
         )
     except subprocess.CalledProcessError as error:
         sys.exit(f"reading the rules failed: {error.stderr.strip()}")
@@ -66,7 +68,7 @@ def main(argv):
     if not missing:
         return
     message = f"the default branch {branch} lacks the rules: {', '.join(missing)}"
-    if private:
+    if private and not rules:
         print(f"Warning: {message}. GitHub enforces no ruleset here without a plan.")
         return
     sys.exit(message)

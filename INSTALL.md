@@ -38,7 +38,7 @@ Im Projektverzeichnis `claude` starten, `/login` ausführen und den Ordner als v
 Der Token hat kein Administration-Recht, deshalb von Hand:
 
 1. Settings, General: "Automatically delete head branches" einschalten.
-2. Settings, Rules, Rulesets: ein aktives Ruleset auf dem Default-Branch ohne Bypass-Liste mit "Require a pull request" (0 Approvals), "Require status checks" für die CI des Projekts und `agent-review` sowie blockierten Force-Pushes und Löschungen. Für dieses Repository heißen die Status-Checks `checks` und `agent-review`. `autopilot-start.sh` startet in einem öffentlichen Repository nicht, solange eine dieser Regeln fehlt; in einem privaten warnt es nur per Telegram, da GitHub das Ruleset dort ohne passenden Plan nicht durchsetzt. Was `agent-review` prüft und was ohne durchgesetztes Ruleset gilt: [Merge und Review](docs/autopilot.md#merge-und-review).
+2. Settings, Rules, Rulesets: ein aktives Ruleset auf dem Default-Branch ohne Bypass-Liste mit "Require a pull request" (0 Approvals), "Require status checks" für die CI des Projekts und `agent-review` sowie blockierten Force-Pushes und Löschungen. Für dieses Repository heißen die Status-Checks `checks` und `agent-review`. `autopilot-start.sh` startet nicht, solange eine dieser Regeln fehlt; nur wenn GitHub für ein privates Repository gar keine Regeln meldet (ohne Plan, der Rulesets durchsetzt), warnt es per Telegram und startet. Was `agent-review` prüft und was ohne durchgesetztes Ruleset gilt: [Merge und Review](docs/autopilot.md#merge-und-review).
 
 ## 6. Telegram (als Projekt-Benutzer)
 
