@@ -18,6 +18,8 @@ permissions:
 
 jobs:
   agent-review-sync:
+    # The token of a fork's pull request is read-only, so a sync there could only fail.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       # The action gets the review key, so its code comes from the base, never
