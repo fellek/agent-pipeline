@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Lets this repository's own autopilot run a release: checks out <tag> in the git
-# worktree .claude/skills/pipeline, since the repository cannot be its own submodule.
+# Lets this repository's own autopilot run its pinned release: checks out the tag in
+# .claude/pipeline-release in the git worktree .claude/skills/pipeline, since the
+# repository cannot be its own submodule.
 worktree=.claude/skills/pipeline
+pin=.claude/pipeline-release
 fail() { echo "use-release: $*" >&2; exit 1; }
 
-[[ $# -eq 1 && -n $1 ]] || fail "usage: use-release.sh <tag>"
-tag=refs/tags/$1
+[ $# -eq 0 ] || fail "usage: use-release.sh"
 [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ] || fail "run it in the repository root"
+[ -f "$pin" ] || fail "$pin is missing"
+name=$(tr -d '[:space:]' <"$pin")
+[ -n "$name" ] || fail "$pin is empty"
+tag=refs/tags/$name
 # git's own message tells a missing tag from a network or auth error.
-git fetch --quiet origin "+$tag:$tag" || fail "fetching tag $1 from origin failed, see above"
+git fetch --quiet origin "+$tag:$tag" || fail "fetching tag $name from origin failed, see above"
 
 common_dir() { git -C "$1" rev-parse --path-format=absolute --git-common-dir; }
 
@@ -26,4 +31,4 @@ else
   git worktree prune
   git worktree add --quiet --detach "$worktree" "$tag"
 fi
-echo "$worktree: $1"
+echo "$worktree: $name"

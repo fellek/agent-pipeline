@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check the project in the working directory against the pipeline's requirements.
 
-Fails if .claude/settings.json lacks a deny rule of the pipeline's settings
-template, or if neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's
+Fails if .claude/settings.json lacks a deny rule or the SessionStart hook of the
+pipeline's settings template (it warns about a missing or stale release), or if neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's
 workflow rules: an @ line whose path, relative to the file it is in, points to
 .claude/skills/pipeline/rules/workflow.md of the project. Only the path counts,
 not whether the file exists, so the check passes without the release checked out.
@@ -24,22 +24,39 @@ CLAUDE_MDS = (Path("CLAUDE.md"), Path(".claude/CLAUDE.md"))
 RULES = ".claude/skills/pipeline/rules/workflow.md"
 
 
-def deny_rules(path):
-    return json.loads(path.read_text()).get("permissions", {}).get("deny", [])
+def deny_rules(settings):
+    return settings.get("permissions", {}).get("deny", [])
+
+
+def session_start_commands(settings):
+    return [
+        hook.get("command")
+        for matcher in settings.get("hooks", {}).get("SessionStart", [])
+        for hook in matcher.get("hooks", [])
+    ]
 
 
 def settings_problems():
     if not SETTINGS.is_file():
         return [f"{SETTINGS} is missing"]
     try:
-        denied = set(deny_rules(SETTINGS))
+        settings = json.loads(SETTINGS.read_text())
     except json.JSONDecodeError as error:
         return [f"{SETTINGS} is no valid JSON: {error}"]
-    return [
+    template = json.loads(TEMPLATE.read_text())
+    denied = set(deny_rules(settings))
+    problems = [
         f"{SETTINGS} lacks the deny rule {rule}"
-        for rule in deny_rules(TEMPLATE)
+        for rule in deny_rules(template)
         if rule not in denied
     ]
+    commands = session_start_commands(settings)
+    problems += [
+        f"{SETTINGS} lacks the SessionStart hook of the pipeline: {command}"
+        for command in session_start_commands(template)
+        if command not in commands
+    ]
+    return problems
 
 
 def normalized(path):

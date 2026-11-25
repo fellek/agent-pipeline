@@ -6,6 +6,7 @@ from conftest import commit, git, script_path
 
 SCRIPT = script_path("use-release.sh")
 WORKTREE = ".claude/skills/pipeline"
+PIN = ".claude/pipeline-release"
 
 
 @pytest.fixture
@@ -19,7 +20,10 @@ def releases(repos, default_branch):
     return clone, tags
 
 
-def use_release(cwd, *args):
+def use_release(cwd, tag=None, *args):
+    if tag is not None:
+        (cwd / ".claude").mkdir(exist_ok=True)
+        (cwd / PIN).write_text(f"{tag}\n")
     return subprocess.run(
         [str(SCRIPT), *args], cwd=cwd, check=False, capture_output=True, text=True
     )
@@ -120,13 +124,27 @@ def test_runs_only_in_repository_root(releases):
     clone, _ = releases
     (clone / "sub").mkdir()
 
-    result = use_release(clone / "sub", "v1")
+    (clone / ".claude").mkdir(exist_ok=True)
+    (clone / PIN).write_text("v1\n")
+
+    result = use_release(clone / "sub")
 
     assert result.returncode == 1
     assert not (clone / "sub" / WORKTREE).exists()
 
 
-@pytest.mark.parametrize("args", [(), ("v1", "v2"), ("",)])
-def test_rejects_bad_arguments(releases, args):
+def test_rejects_arguments(releases):
     clone, _ = releases
-    assert use_release(clone, *args).returncode == 1
+    assert use_release(clone, "v1", "v2").returncode == 1
+    assert not (clone / WORKTREE).exists()
+
+
+@pytest.mark.parametrize("pin", [None, ""])
+def test_fails_without_pinned_tag(releases, pin):
+    clone, _ = releases
+
+    result = use_release(clone, pin)
+
+    assert result.returncode == 1
+    assert ("empty" if pin == "" else "missing") in result.stderr
+    assert not (clone / WORKTREE).exists()

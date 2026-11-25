@@ -64,5 +64,17 @@
       "Read(./.env.*)",
       "Read(~/.claude/channels/**/.env)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && s=.claude/skills/pipeline/host/check-release.sh && if [ -x \"$s\" ]; then w=$(\"$s\"); else w=\"Warning: $s is missing, so Claude Code loads no pipeline rules, skills or hook. See INSTALL.md of the pipeline.\"; false; fi || python3 -c 'import json, sys; print(json.dumps({\"systemMessage\": sys.argv[1], \"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": sys.argv[1]}}))' \"$w\""
+          }
+        ]
+      }
+    ]
   }
 }

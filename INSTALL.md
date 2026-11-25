@@ -27,7 +27,7 @@ Das Projekt klonen, etwa `gh repo clone <owner>/<projekt> ~/<projekt>`; `gh` nut
 
 - **Neues Projekt**: zusätzlich dieses Repository klonen, etwa `git clone https://github.com/fellek/agent-pipeline ~/agent-pipeline`, und im Projekt `~/agent-pipeline/host/init-project.sh <tag>` ausführen ([was es tut](docs/autopilot.md#einrichtung-eines-projekts)). Danach die Schritte abarbeiten, die es am Ende listet: Commit, Trust-Dialog (siehe 4.), Checks in `.claude/rules/project.md` und in der CI, deren Allow-Regeln in `.claude/settings.json`, Ruleset und automatisches Löschen der Head-Branches (siehe 5.).
 - **Projekt, das die Pipeline schon enthält**: `git submodule update --init && git config submodule.recurse true`.
-- **Dieses Repository**: es kann nicht sein eigenes Submodul sein. `host/use-release.sh <tag>` checkt das Release als Worktree unter `.claude/skills/pipeline` aus (gitignored). Die Labels legt `host/create-labels.sh` an.
+- **Dieses Repository**: es kann nicht sein eigenes Submodul sein. `host/use-release.sh` checkt das Release aus `.claude/pipeline-release` als Worktree unter `.claude/skills/pipeline` aus (gitignored). Die Labels legt `host/create-labels.sh` an.
 
 ## 4. Claude Code (als Projekt-Benutzer)
 
