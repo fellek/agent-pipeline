@@ -10,12 +10,12 @@ def gate():
     return load_script("open-review-threads.py")
 
 
-def thread(url, resolved=False):
+def thread(url, resolved=False, association="OWNER"):
     return {
         "isResolved": resolved,
         "path": "a.py",
         "line": 3,
-        "comments": {"nodes": [{"url": url}]},
+        "comments": {"nodes": [{"url": url, "authorAssociation": association}]},
     }
 
 
@@ -96,3 +96,16 @@ def test_main_rejects_invalid_arguments(gate, argv):
         gate.main(argv)
 
     assert "Usage" in str(exit_info.value.code)
+
+
+@pytest.mark.parametrize("association", ["CONTRIBUTOR", "NONE"])
+def test_threads_of_strangers_are_ignored(monkeypatch, gate, association):
+    fake_gh(monkeypatch, [page(thread("x", association=association), thread("u1"))])
+
+    assert [t["url"] for t in gate.unresolved(gate.threads(66))] == ["u1"]
+
+
+def test_query_reads_the_author_association(monkeypatch, gate):
+    calls = fake_gh(monkeypatch, [page()])
+    gate.threads(66)
+    assert "authorAssociation" in calls[0][-1]
