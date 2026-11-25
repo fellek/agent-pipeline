@@ -43,7 +43,8 @@ def run_start(tmp_path, app):
         stubs / "claude",
         f"""case "$1" in
   --version) echo "${{CLAUDE_VERSION:-{VERSIONS["claude_code"]}}} (Claude Code)" ;;
-  plugin) printf '%s\n' "${{PLUGINS:-$DEFAULT_PLUGINS}}" ;;
+  plugin) [ "$2" = validate ] && {{ echo "$3" > {tmp_path}/validated; printf '%s\n' "Validating $3" "  > ${{VALIDATE_OUT-ok}}" "Plugin directory checks" "  > README" "× Validation failed"; exit "${{VALIDATE_EXIT-0}}"; }}
+    printf '%s\n' "${{PLUGINS:-$DEFAULT_PLUGINS}}" ;;
   *) echo "${{CLAUDE_CODE_EFFORT_LEVEL-unset}}" > {effort_level}
      echo "${{CLAUDE_CODE_RETRY_WATCHDOG-unset}}" > {watchdog}
      echo "${{DISABLE_AUTOUPDATER-unset}}" > {updater} ;;
@@ -57,6 +58,10 @@ esac""",
         scripts / "check-ruleset.py",
         'echo "$1" > "$RULESET_ARGS"; [ -z "${RULESET_OUT-}" ] || echo "$RULESET_OUT"'
         "; exit ${RULESET_EXIT-0}",
+    )
+    write_executable(
+        scripts / "check-release.sh",
+        'echo "${RELEASE_OUT-}"; exit "${RELEASE_EXIT-0}"',
     )
     write_executable(plugin_bin / "telegram-send.py", 'cat > "$TELEGRAM_OUT"')
     write_executable(plugin_bin / "gate", 'exit "${GATE_EXIT-0}"')
@@ -330,3 +335,32 @@ def test_fails_with_message_when_plugin_list_fails(run_start):
     assert "claude plugin list --json failed" in result.stderr
     assert "Traceback" not in result.stderr
     assert tmux_args == []
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        (
+            {"RELEASE_EXIT": "1", "RELEASE_OUT": "Warning: tag v9 is not fetched"},
+            "Warning: tag v9 is not fetched",
+        ),
+        (
+            {"VALIDATE_EXIT": "1", "VALIDATE_OUT": "bad manifest"},
+            "fails claude plugin validate: bad manifest\n",
+        ),
+    ],
+    ids=["release", "validate"],
+)
+def test_broken_release_stops_the_start_with_a_message(
+    run_start, tmp_path, env, message
+):
+    result, tmux_args, *_ = run_start(env=env)
+
+    assert result.returncode == 1
+    assert message in (tmp_path / "telegram").read_text()
+    assert tmux_args == []
+
+
+def test_validates_the_plugin_of_the_release(run_start, tmp_path):
+    run_start()
+    assert (tmp_path / "validated").read_text() == f"{tmp_path / 'plugin'}\n"
