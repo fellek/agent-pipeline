@@ -431,7 +431,7 @@ def mark_comment(args, stdin):
     ):
         for i, arg in enumerate(args):
             name, eq, value = arg.partition("=")
-            if arg == "--input":
+            if name == "--input":
                 body = json.loads(stdin())
                 if "body" in body:
                     body["body"] = marked(body["body"])

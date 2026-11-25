@@ -755,8 +755,9 @@ def test_comment_from_stdin_gets_the_marker(gate):
     assert gate.mark_comment(args, lambda: "x") == (args, "x" + MARK)
 
 
-def test_api_input_gets_the_marker(gate):
-    args = ["api", "repos/o/app/issues/5/comments", "--input", "-"]
+@pytest.mark.parametrize("flag", [["--input", "-"], ["--input=-"]])
+def test_api_input_gets_the_marker(gate, flag):
+    args = ["api", "repos/o/app/issues/5/comments", *flag]
     _, stdin = gate.mark_comment(args, lambda: '{"body": "x"}')
     assert json.loads(stdin) == {"body": "x" + MARK}
 
