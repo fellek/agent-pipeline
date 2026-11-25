@@ -1,0 +1,22 @@
+name: agent-review-sync
+description: 'Re-run the agent-review run on the head commit of a pull request if its result differs from the verdict of the latest review'
+inputs:
+  pr:
+    description: Pull request number
+    required: true
+  head-sha:
+    description: Head commit of the pull request
+    required: true
+  github-token:
+    description: Token with read access to the pull request's reviews and write access to Actions
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ inputs.pr }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+      run: '"$GITHUB_ACTION_PATH/../../bin/agent-review.py" sync "$PR" "$HEAD_SHA"'
