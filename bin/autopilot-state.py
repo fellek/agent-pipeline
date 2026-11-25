@@ -79,6 +79,10 @@ ISSUE_FIELDS = {
     "question": None,
     "events_since": None,
     "attempts_per_step": {},
+    # Started forks of the issue, against ISSUE_FORKS.
+    "fork_runs": 0,
+    # The answer for the step that the daily budget held back.
+    "held_answer": None,
     # Forks, tokens and seconds per step, for pipeline-metrics.py.
     "usage": {},
     "questions": 0,
@@ -104,6 +108,9 @@ DEFAULT = {
     "pending": None,
     # Issues whose setprio needs no plan-issue.
     "plan_skip": [],
+    # Started forks of the UTC day, against DAY_FORKS.
+    "day": None,
+    "day_forks": 0,
 }
 # Fields a parked entry keeps of the state.
 PARKED_FIELDS = (
@@ -114,12 +121,17 @@ PARKED_FIELDS = (
     "review_rounds",
     "sync_rounds",
     "attempts_per_step",
+    "fork_runs",
+    "held_answer",
     "usage",
     "questions",
     "events_since",
     "question",
     "failure",
 )
+# Attempts reset with each step, so these bound the forks of an issue and a day.
+ISSUE_FORKS = 15
+DAY_FORKS = 50
 CI_DETAILS = {
     "missing": "kein CI-Lauf gefunden",
     "timeout": "CI nach 45 Minuten nicht fertig",
@@ -578,6 +590,8 @@ class Autopilot:
         for field in PARKED_FIELDS:
             if field != "question":
                 self.s[field] = entry.get(field, ISSUE_FIELDS[field])
+        # The maintainer's answer grants a new budget.
+        self.s["fork_runs"] = 0
         self.s.update(pr=pr, waiting_for=None, question=None)
         self.log("resume")
         self.run_step(entry["answer"])
@@ -589,6 +603,8 @@ class Autopilot:
     def run_step(self, answer=""):
         """Loop step 4: start the step of the current issue."""
         step = self.s["step"]
+        # A held answer belongs to the step; the answer to a Budget park only grants more.
+        answer, self.s["held_answer"] = self.s["held_answer"] or answer or "", None
         # The session may have ended between the merge and the reset of the state.
         if self.s["pr"] and self.merged():
             self.log("already merged")
@@ -597,6 +613,7 @@ class Autopilot:
         if self.s["question"]:
             # `weiter` after a blocked search.
             self.search_answer(count=False)
+        self.check_budget(answer)
         if step != "setprio":
             self.set_label(self.s["issue"], STEP_LABELS[step])
         counts = self.s["attempts_per_step"]
@@ -614,6 +631,33 @@ class Autopilot:
 
     def background(self, task):
         self.act(background=f"autopilot-task.py {task}", timeout=BACKGROUND_MS)
+
+    def check_budget(self, answer=""):
+        n = self.s["issue"]
+        if self.s["fork_runs"] >= ISSUE_FORKS:
+            self.send(
+                f"#{n} geparkt, Budget erreicht: {self.s['fork_runs']} Fork-Läufe",
+                f"#{n} weiter",
+                "status",
+            )
+            self.s["held_answer"] = answer or None
+            self.park("Budget")
+        today = now()[:10]
+        if self.s["day"] != today:
+            self.s.update(day=today, day_forks=0)
+        if self.s["day_forks"] >= DAY_FORKS:
+            # `weiter` grants the next DAY_FORKS.
+            self.s.update(day_forks=0, held_answer=answer or None)
+            self.send(
+                f"Tagesbudget erreicht: {DAY_FORKS} Fork-Läufe heute, "
+                f"weiter gibt {DAY_FORKS} weitere frei",
+                "weiter",
+                "status",
+            )
+            self.s.update(paused=True, waiting_for="resume")
+            self.wait()
+        self.s["fork_runs"] += 1
+        self.s["day_forks"] += 1
 
     def start_skill(self, step, first, second):
         quoted = " ".join(
@@ -792,6 +836,7 @@ class Autopilot:
         self.search_answer()
 
     def search_answer(self, count=True):
+        self.check_budget()
         if count:
             self.s["events_since"] = self.github_now()
         if self.s["refs"] is None:
@@ -1075,7 +1120,7 @@ class Autopilot:
             self.send(f"#{n} Kennzahlen nicht erfasst: {err}")
         self.s["parked"].append(entry)
         self.reset(keep_paused=True)
-        if reason not in ("Rückfrage", "Patch"):
+        if reason not in ("Rückfrage", "Patch", "Budget"):
             self.send(f"#{n} geparkt ({reason})", f"#{n} weiter", "status")
         if was_paused:
             self.s["waiting_for"] = "resume"
@@ -1337,6 +1382,7 @@ class Autopilot:
             self.s["parked"].remove(entry)
             for field in PARKED_FIELDS:
                 self.s[field] = entry.get(field, ISSUE_FIELDS[field])
+            self.s["fork_runs"] = 0
             self.s["question"] = None
             if lookup and lookup["pr"]:
                 self.s["pr"] = lookup["pr"]
