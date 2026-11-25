@@ -68,7 +68,7 @@ Handle a message according to `waiting_for`. While `paused`, only `weiter`, `cle
 
 The parked targets are, for each waiting parked entry, `answer <issue> <events_since>` (`waiting_for: "answer"`) or `patch <branch> <events_since>` (`"patch"`). `autopilot-poll.py check <targets>` polls once; `wait <targets>` polls until one target has an event. Both print the events as JSON lines.
 
-The poller is `autopilot-poll.py wait new_issue <label> <parked targets>`, run as background Bash (`run_in_background`). Keep at most one poller. When a Telegram message arrives, stop the poller before posting anything on GitHub; otherwise the autopilot's own comment counts as a new maintainer event. On exit, look for issues again (step 3); the cursors are unchanged, so step 3 finds the same events. Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
+The poller is `autopilot-poll.py wait new_issue <label> <parked targets>`, run as background Bash (`run_in_background`). Keep at most one poller. When a Telegram message arrives, stop the poller first; start it again when the message leaves the wait for new issues in place. On exit, look for issues again (step 3); the cursors are unchanged, so step 3 finds the same events. Non-zero exit: start it again, at most 3 times in a row; then report the error, set `paused` and `waiting_for: "resume"`.
 
 ## Status labels
 

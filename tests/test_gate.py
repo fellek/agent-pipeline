@@ -715,6 +715,28 @@ MARK = "\n\n<!-- pipeline -->"
             ],
         ),
         (["issue", "view", "5"], ["issue", "view", "5"]),
+        (["issue", "close", "5", "-c", "x"], ["issue", "close", "5", "-c", "x" + MARK]),
+        (
+            ["issue", "reopen", "5", "--comment=x"],
+            ["issue", "reopen", "5", "--comment=x" + MARK],
+        ),
+        (
+            ["pr", "close", "5", "--comment", "x"],
+            ["pr", "close", "5", "--comment", "x" + MARK],
+        ),
+        (["issue", "close", "5"], ["issue", "close", "5"]),
+        (
+            ["api", "repos/o/app/issues/5/comments", "--raw-field=body=x"],
+            ["api", "repos/o/app/issues/5/comments", "--raw-field=body=x" + MARK],
+        ),
+        (
+            ["api", "repos/o/app/issues/5/comments?per_page=1", "--field=body=x"],
+            [
+                "api",
+                "repos/o/app/issues/5/comments?per_page=1",
+                "--field=body=x" + MARK,
+            ],
+        ),
         (
             ["api", "repos/o/app/issues/5", "-f", "body=x"],
             ["api", "repos/o/app/issues/5", "-f", "body=x"],
@@ -737,6 +759,12 @@ def test_api_input_gets_the_marker(gate):
     args = ["api", "repos/o/app/issues/5/comments", "--input", "-"]
     _, stdin = gate.mark_comment(args, lambda: '{"body": "x"}')
     assert json.loads(stdin) == {"body": "x" + MARK}
+
+
+def test_api_input_without_a_body_is_passed_on(gate):
+    args = ["api", "repos/o/app/issues/comments/9", "--input", "-"]
+    _, stdin = gate.mark_comment(args, lambda: '{"x": 1}')
+    assert json.loads(stdin) == {"x": 1}
 
 
 def test_marked_comment_runs_with_stdin(gate, project, monkeypatch):

@@ -398,6 +398,16 @@ def api_problem(args, repo):
 COMMENT_PATHS = re.compile(r"repos/[^/]+/[^/]+/issues/(\d+/comments|comments/\d+)")
 
 
+# The flags of the commands that post an issue comment.
+COMMENT_FLAGS = {
+    ("issue", "comment"): ("-b", "--body", "-F", "--body-file"),
+    ("pr", "comment"): ("-b", "--body", "-F", "--body-file"),
+    ("issue", "close"): ("-c", "--comment"),
+    ("issue", "reopen"): ("-c", "--comment"),
+    ("pr", "close"): ("-c", "--comment"),
+}
+
+
 def marked(text):
     return f"{text}\n\n{trust.MARKER}"
 
@@ -405,28 +415,32 @@ def marked(text):
 def mark_comment(args, stdin):
     """The arguments and stdin of `gh <args>` with the marker in a comment body."""
     args = list(args)
-    if args[:2] in (["issue", "comment"], ["pr", "comment"]):
-        for i, arg in enumerate(args):
-            name, eq, value = arg.partition("=")
-            if name not in ("-b", "--body", "-F", "--body-file"):
-                continue
-            if name in ("-F", "--body-file"):
-                return args, marked(stdin())
-            if eq:
-                args[i] = f"{name}={marked(value)}"
-            else:
-                args[i + 1] = marked(args[i + 1])
-        return args, None
+    flags = COMMENT_FLAGS.get(tuple(args[:2]), ())
+    for i, arg in enumerate(args):
+        name, eq, value = arg.partition("=")
+        if name not in flags:
+            continue
+        if name in ("-F", "--body-file"):
+            return args, marked(stdin())
+        if eq:
+            args[i] = f"{name}={marked(value)}"
+        else:
+            args[i + 1] = marked(args[i + 1])
     if args[:1] == ["api"] and any(
-        COMMENT_PATHS.fullmatch(a.lstrip("/")) for a in args
+        COMMENT_PATHS.fullmatch(a.lstrip("/").partition("?")[0]) for a in args
     ):
         for i, arg in enumerate(args):
+            name, eq, value = arg.partition("=")
             if arg == "--input":
                 body = json.loads(stdin())
-                return args, json.dumps({**body, "body": marked(body["body"])})
-            if arg in ("-f", "-F", "--field", "--raw-field") and args[i + 1].startswith(
-                "body="
-            ):
+                if "body" in body:
+                    body["body"] = marked(body["body"])
+                return args, json.dumps(body)
+            if name not in ("-f", "-F", "--field", "--raw-field"):
+                continue
+            if eq and value.startswith("body="):
+                args[i] = f"{name}={marked(value)}"
+            elif not eq and args[i + 1].startswith("body="):
                 args[i + 1] = marked(args[i + 1])
     return args, None
 
