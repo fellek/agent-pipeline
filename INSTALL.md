@@ -23,11 +23,11 @@ Als Projekt-Benutzer:
 
 ## 3. Projekt (als Projekt-Benutzer)
 
-Eine der drei Varianten:
+Das Projekt klonen, etwa `gh repo clone <owner>/<projekt> ~/<projekt>`; `gh` nutzt die Anmeldung aus 2. Der Pfad darf nur `A-Za-z0-9._/-` enthalten, sonst bricht `install-service.sh` ab. Alle folgenden Befehle laufen in diesem Verzeichnis. Dann eine der drei Varianten:
 
-- **Neues Projekt**: im Wurzelverzeichnis des Projekts, aus einem Klon dieses Repositorys, `host/init-project.sh <tag>` ausführen ([was es tut](docs/autopilot.md#einrichtung-eines-projekts)) und die Schritte abarbeiten, die es am Ende listet: Commit, Trust-Dialog (siehe 4.), Checks in `.claude/rules/project.md` und in der CI, deren Allow-Regeln in `.claude/settings.json`, Ruleset und automatisches Löschen der Head-Branches (siehe 5.).
-- **Projekt, das die Pipeline schon enthält**: klonen, dann `git submodule update --init && git config submodule.recurse true`.
-- **Dieses Repository**: es kann nicht sein eigenes Submodul sein. Klonen, dann `host/use-release.sh <tag>`; das checkt das Release als Worktree unter `.claude/skills/pipeline` aus (gitignored). Die Labels legt `host/create-labels.sh` an.
+- **Neues Projekt**: zusätzlich dieses Repository klonen, etwa `git clone https://github.com/fellek/agent-pipeline ~/agent-pipeline`, und im Projekt `~/agent-pipeline/host/init-project.sh <tag>` ausführen ([was es tut](docs/autopilot.md#einrichtung-eines-projekts)). Danach die Schritte abarbeiten, die es am Ende listet: Commit, Trust-Dialog (siehe 4.), Checks in `.claude/rules/project.md` und in der CI, deren Allow-Regeln in `.claude/settings.json`, Ruleset und automatisches Löschen der Head-Branches (siehe 5.).
+- **Projekt, das die Pipeline schon enthält**: `git submodule update --init && git config submodule.recurse true`.
+- **Dieses Repository**: es kann nicht sein eigenes Submodul sein. `host/use-release.sh <tag>` checkt das Release als Worktree unter `.claude/skills/pipeline` aus (gitignored). Die Labels legt `host/create-labels.sh` an.
 
 ## 4. Claude Code (als Projekt-Benutzer)
 
@@ -50,7 +50,7 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 ## 7. Dienst (als Projekt-Benutzer, im Projektverzeichnis)
 
 1. `.claude/skills/pipeline/host/check-fork.sh` muss `OK: forked skill is isolated` melden (Forks dürfen die Unterhaltung nicht sehen).
-2. `.claude/skills/pipeline/host/install-service.sh [<label>]` schreibt den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` und startet ihn; Default-Label `ready`. Projekt- und Plugin-Pfad dürfen nur `A-Za-z0-9._/-` enthalten. Für dieses Repository aus dem Release-Worktree aufrufen, damit der Dienst nicht den Arbeitsstand ausführt.
+2. `.claude/skills/pipeline/host/install-service.sh [<label>]` schreibt den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` und startet ihn; Default-Label `ready`. Für dieses Repository aus dem Release-Worktree aufrufen, damit der Dienst nicht den Arbeitsstand ausführt.
 
 ## 8. Prüfen
 
