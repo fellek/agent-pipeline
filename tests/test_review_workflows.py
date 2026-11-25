@@ -25,3 +25,19 @@ def test_sync_skips_pull_requests_from_forks(folder):
     text = (ROOT / folder / "agent-review-sync.yml").read_text()
     condition = "if: github.event.pull_request.head.repo.full_name == github.repository"
     assert f"    {condition}\n    runs-on:" in text
+
+
+def pins(folder):
+    found = {}
+    for path in (ROOT / folder).glob("*.yml"):
+        for action, ref in re.findall(r"uses: ([^.\s][^@\s]*)@(\S+)", path.read_text()):
+            found.setdefault(action, set()).add(ref)
+    return found
+
+
+def test_templates_pin_the_actions_of_this_repository():
+    # Dependabot updates only .github/workflows; a bump PR stays red until the
+    # templates follow.
+    ours = pins(".github/workflows")
+    for action, refs in pins("templates/github/workflows").items():
+        assert refs == ours[action], action
