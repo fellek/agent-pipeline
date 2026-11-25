@@ -164,6 +164,17 @@ def test_runs_only_in_repository_root(app):
     assert not (app / ".gitmodules").exists()
 
 
+def test_refuses_pipeline_repository(app):
+    (app / ".claude").mkdir()
+    (app / ".claude/pipeline-release").write_text("v1\n")
+
+    result = init_project(app, "v1")
+
+    assert result.returncode == 1
+    assert "host/use-release.sh" in result.stderr
+    assert not (app / ".gitmodules").exists()
+
+
 @pytest.mark.parametrize("args", [(), ("v1", "v2"), ("",)])
 def test_rejects_bad_arguments(app, args):
     assert init_project(app, *args).returncode == 1

@@ -91,10 +91,11 @@ cd ~/<projekt>
 
 Dann eine der drei Varianten:
 
-- **Neues Projekt**: zusätzlich dieses Repository klonen und im Projekt `init-project.sh` ausführen ([was es tut](docs/autopilot.md#einrichtung-eines-projekts)):
+- **Neues Projekt**: zusätzlich dieses Repository klonen und `init-project.sh` im Projekt ausführen, nicht im Klon der Pipeline ([was es tut](docs/autopilot.md#einrichtung-eines-projekts)):
 
   ```
   git clone https://github.com/fellek/agent-pipeline ~/agent-pipeline
+  cd ~/<projekt>
   ~/agent-pipeline/host/init-project.sh <tag>
   ```
 
@@ -105,7 +106,7 @@ Dann eine der drei Varianten:
   git submodule update --init && git config submodule.recurse true
   ```
 
-- **Dieses Repository**: es kann nicht sein eigenes Submodul sein. `use-release.sh` checkt das Release aus `.claude/pipeline-release` als Worktree unter `.claude/skills/pipeline` aus (gitignored), `create-labels.sh` legt die Labels an:
+- **Dieses Repository**: es kann nicht sein eigenes Submodul sein, `init-project.sh` bricht hier ab. `use-release.sh` checkt das Release aus `.claude/pipeline-release` als Worktree unter `.claude/skills/pipeline` aus (gitignored), `create-labels.sh` legt die Labels an:
 
   ```
   host/use-release.sh
