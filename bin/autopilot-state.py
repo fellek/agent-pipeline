@@ -79,6 +79,8 @@ ISSUE_FIELDS = {
     "park": None,
     "head": None,
     "merge": None,
+    # HEAD and the remote branch before a read-only step.
+    "refs": None,
     # The event to repeat on `weiter` after a failed command.
     "retry": None,
 }
@@ -402,6 +404,7 @@ class Autopilot:
         if waiting in ("restart", "step"):
             self.s["waiting_for"] = None
             if self.s["park"]:
+                self.check_refs()
                 self.park(self.s["park"])
             if self.s["question"]:
                 self.search_answer(count=False)
@@ -438,6 +441,7 @@ class Autopilot:
     def on_stopped(self, task_id):
         if task_id == self.s["task_id"] and self.s["waiting_for"] in RUNNING:
             self.s.update(task_id=None, waiting_for=None)
+            self.check_refs()
             self.park(self.s["park"])
         self.wait()
 
@@ -553,11 +557,17 @@ class Autopilot:
             self.log("already merged")
             self.merge()
             return
+        if self.s["question"]:
+            # `weiter` after a blocked search.
+            self.search_answer(count=False)
         if step != "setprio":
             self.set_label(self.s["issue"], STEP_LABELS[step])
         counts = self.s["attempts_per_step"]
         counts[step] = counts.get(step, 0) + 1
         self.log("start")
+        # Kept over reruns and restarts, so a commit never becomes the baseline.
+        if step in CLEAN_STEPS and self.s["refs"] is None:
+            self.s["refs"] = self.refs()
         if step == "review-issue":
             self.s["head"] = self.head_sha()
             self.background(f"step gate review {self.s['pr']} {self.s['head']}")
@@ -578,9 +588,33 @@ class Autopilot:
 
     # results of a step
 
+    def refs(self):
+        branch = self.s["branch"] or self.current_branch()
+        return [
+            self.ok("git", "rev-parse", "HEAD"),
+            self.ok("git", "ls-remote", "origin", f"refs/heads/{branch}"),
+        ]
+
+    def check_refs(self):
+        """Pause if a read-only step committed or pushed: never retry, park or push it."""
+        refs, self.s["refs"] = self.s["refs"], None
+        if refs is None or self.refs() == refs:
+            return
+        step = "find-answer" if self.s["question"] else self.s["step"]
+        branch = self.s["branch"] or "dem Default-Branch"
+        self.log("blocked commit or push")
+        self.send(
+            f"{self.prefix()}{step} blockiert: Commit oder Push in einem lesenden "
+            f"Schritt (oder ein Push auf {branch}), bitte prüfen; weiter setzt fort "
+            "und pusht beim Parken, was auf dem Branch liegt",
+            "status",
+        )
+        self.pause()
+
     def on_result(self, result):
         if result and result.get("PIPELINE_FINDING"):
             self.send(f"{self.prefix()}Pipeline-Befund: {result['PIPELINE_FINDING']}")
+        self.check_refs()
         if self.s["question"]:
             self.on_search_result(result)
             return
@@ -716,6 +750,8 @@ class Autopilot:
     def search_answer(self, count=True):
         if count:
             self.s["events_since"] = self.github_now()
+        if self.s["refs"] is None:
+            self.s["refs"] = self.refs()
         self.act(
             skill="pipeline:find-answer",
             args=f'{self.s["issue"]} "{self.s["question"].replace(chr(34), chr(39))}" ""',
