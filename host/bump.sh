@@ -49,6 +49,11 @@ repo=${owner##*[/:]}/${url##*/}
 notes=$(gh release view "$tag" --repo "$repo" --json body --jq .body) \
   || fail "reading the release notes of $tag in $repo failed"
 
+# The branch of an earlier bump to this tag, as before a rollback, may still be on
+# origin, and the gate takes only fast-forwards.
+if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+  branch=$branch-$(date -u +%Y%m%dT%H%M%SZ)
+fi
 git switch --quiet --no-track -c "$branch" "origin/$default"
 # Back to the previous checkout, with the submodule where that checkout has it.
 trap 'git checkout --quiet --recurse-submodules -' EXIT

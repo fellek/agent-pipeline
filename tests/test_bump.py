@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 
 import pytest
@@ -123,6 +124,24 @@ def test_refuses_existing_branch(app):
 
     assert result.returncode == 1
     assert "branch bump-pipeline-v2 exists" in result.stderr
+
+
+def test_branch_of_an_earlier_bump_on_origin_gets_a_new_name(app):
+    git(app, "switch", "-q", "-c", "bump-pipeline-v2")
+    commit(app, "README", "earlier bump")
+    git(app, "push", "-q", "origin", "bump-pipeline-v2")
+    earlier = git(app, "rev-parse", "HEAD")
+    git(app, "switch", "-q", "-")
+    git(app, "branch", "-q", "-D", "bump-pipeline-v2")
+
+    result = bump(app, "v2")
+
+    assert result.returncode == 0, result.stderr
+    args = gh_args(app, "pr create")
+    head = args[args.index("--head") + 1]
+    assert re.fullmatch(r"bump-pipeline-v2-\d{8}T\d{6}Z", head)
+    assert git(app, "ls-remote", "origin", "bump-pipeline-v2").split()[0] == earlier
+    assert git(app, "ls-remote", "origin", head) != ""
 
 
 def test_refuses_project_without_submodule(tmp_path, git_identity):
