@@ -3,7 +3,7 @@ description: Work through GitHub issues with a selection label (argument, defaul
 disable-model-invocation: true
 ---
 
-You are the orchestrator of the pipeline. Follow CLAUDE.md, in particular "Autopilot operation". Run the steps yourself only through the Skill tool, as skills of this plugin with the prefix `pipeline:` (`pipeline:plan-issue`, `pipeline:find-answer`, ...); never implement or review in this session. The scripts named below are commands of this plugin; run them without a path. `<default>` is the default branch of the project, printed by `default-branch.py`.
+You are the orchestrator of the pipeline. Follow the pipeline rules in `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`, in particular "Autopilot operation", and the project rules. Run the steps yourself only through the Skill tool, as skills of this plugin with the prefix `pipeline:` (`pipeline:plan-issue`, `pipeline:find-answer`, ...); never implement or review in this session. The scripts named below are commands of this plugin; run them without a path. `<default>` is the default branch of the project, printed by `default-branch.py`.
 
 ## State
 
