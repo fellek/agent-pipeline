@@ -932,13 +932,20 @@ def test_cleanup_without_an_issue_branch(pilot):
     assert pilot.texts() == ["Kein Issue-Branch, bitte von Hand aufräumen"]
 
 
-def test_update_runs_the_update_script(pilot):
+@pytest.mark.parametrize("command", ["update", "rollback"])
+def test_update_runs_the_update_script(pilot, command):
     pilot.state = {"waiting_for": "new_issue"}
     pilot.result(
-        ".claude/skills/pipeline/host/update-pipeline.sh", out="x\nhttps://pr/9"
+        f".claude/skills/pipeline/host/{command}-pipeline.sh", out="x\nhttps://pr/9"
     )
-    message(pilot, "update")
+    message(pilot, command)
     assert pilot.texts() == ["https://pr/9"]
+
+
+def test_rollback_with_a_current_issue_is_refused(pilot):
+    at_step(pilot, "issue", waiting_for="resume", paused=True, task_id=None)
+    message(pilot, "rollback")
+    assert pilot.texts() == ["rollback nur ohne aktuelles Issue"]
 
 
 def test_update_with_a_current_issue_is_refused(pilot):

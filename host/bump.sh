@@ -67,3 +67,8 @@ gh pr create --base "$default" --head "$branch" \
 ## Release notes
 
 $notes"
+git checkout --quiet --recurse-submodules -
+trap - EXIT
+# The pushed branch holds the change; a later bump to the same tag, as by a rollback,
+# would otherwise refuse.
+git branch --quiet -D "$branch"
