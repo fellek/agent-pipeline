@@ -1700,6 +1700,16 @@ def test_done_counts_the_usage_of_the_step_fork(pilot):
     }
 
 
+def test_done_of_find_answer_counts_under_its_own_name(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION)
+    pilot.event("done", "t1", "800", "30000", text=result(answer="none"))
+    assert pilot.state["usage"]["find-answer"] == {
+        "forks": 1,
+        "tokens": 800,
+        "duration_s": 30,
+    }
+
+
 def test_done_without_usage_counts_nothing(pilot):
     at_step(pilot, "issue")
     finish(pilot, result("blocked"))

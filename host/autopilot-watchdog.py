@@ -60,9 +60,12 @@ def prompt(name):
         check=False,
     ).stdout
     tail = "\n".join(pane.rstrip().splitlines()[-PANE_LINES:])
-    if not PROMPT.search(tail):
+    match = PROMPT.search(tail)
+    if not match:
         return None
-    digest = hashlib.sha256(tail.encode()).hexdigest()
+    # The rest of the pane keeps changing (spinner, timer), the question does not.
+    question = tail[match.start() :].splitlines()[0]
+    digest = hashlib.sha256(question.encode()).hexdigest()
     return f"prompt {digest}", f"Session wartet auf eine Eingabe:\n{tail}"
 
 
@@ -71,11 +74,15 @@ def check(now):
     memory = PIPELINE / "watchdog.json"
     alerted = json.loads(memory.read_text()) if memory.exists() else []
     findings = [f for f in (stale(now), prompt(name)) if f]
-    for key, text in findings:
-        if key not in alerted:
-            send(f"{name}: {text}")
+    sent = [key for key, _ in findings if key in alerted]
     PIPELINE.mkdir(exist_ok=True)
-    memory.write_text(json.dumps([key for key, _ in findings]))
+    for key, text in findings:
+        if key not in sent:
+            send(f"{name}: {text}")
+            # A later failed send must not repeat this one.
+            sent.append(key)
+            memory.write_text(json.dumps(sent))
+    memory.write_text(json.dumps(sent))
 
 
 def main(argv):

@@ -74,6 +74,33 @@ def test_prompt_in_the_session_is_reported_until_it_changes(watchdog):
     assert "Do you want to proceed?" in watchdog.sent[0]
 
 
+def test_prompt_is_not_repeated_when_the_rest_of_the_pane_changes(watchdog):
+    watchdog.pane = "12s\nDo you want to proceed?\n"
+    watchdog.check(NOW)
+    watchdog.pane = "13s\nDo you want to proceed?\n"
+    watchdog.check(NOW)
+    assert len(watchdog.sent) == 1
+
+
+def test_a_failed_send_does_not_repeat_the_sent_finding(watchdog, monkeypatch):
+    write_state("step", 4)
+    watchdog.pane = "Do you want to proceed?"
+
+    def send(text):
+        if "Eingabe" in text:
+            raise subprocess.CalledProcessError(1, "telegram-send.py")
+        watchdog.sent.append(text)
+
+    monkeypatch.setattr(watchdog, "send", send)
+    with pytest.raises(subprocess.CalledProcessError):
+        watchdog.check(NOW)
+    monkeypatch.setattr(watchdog, "send", watchdog.sent.append)
+    watchdog.check(NOW)
+
+    assert len(watchdog.sent) == 2
+    assert "Eingabe" in watchdog.sent[1]
+
+
 def test_a_finding_that_clears_is_reported_again_later(watchdog):
     watchdog.pane = "Do you want to proceed?"
     watchdog.check(NOW)

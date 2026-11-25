@@ -463,8 +463,9 @@ class Autopilot:
         self.wait()
 
     def count_usage(self, tokens, duration_ms):
+        step = "find-answer" if self.s["question"] else self.s["step"]
         counts = self.s["usage"].setdefault(
-            self.s["step"], {"forks": 0, "tokens": 0, "duration_s": 0}
+            step, {"forks": 0, "tokens": 0, "duration_s": 0}
         )
         counts["forks"] += 1
         counts["tokens"] += int(tokens)

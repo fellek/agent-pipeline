@@ -192,27 +192,41 @@ def test_park_records_reason_and_usage(tmp_path, metrics):
     ]
 
 
-def test_summary_shows_parked_issues_and_tokens_per_step(metrics):
-    usage = {"issue": {"forks": 1, "tokens": 1000, "duration_s": 60}}
-    merged = [
-        {
-            "review_rounds": 1,
-            "attempts": {},
-            "questions": 0,
-            "duration_s": None,
-            "usage": usage,
-        }
-    ]
+def merged_record(issue, usage):
+    return {
+        "issue": issue,
+        "review_rounds": 1,
+        "attempts": {},
+        "questions": 0,
+        "duration_s": None,
+        "usage": usage,
+    }
+
+
+def test_summary_shows_parks_and_tokens_per_step(metrics):
+    merged = [merged_record(1, {"issue": {"tokens": 1000}})]
     parked = [
-        {"reason": "Failure", "usage": {"issue": {"tokens": 3000}}},
-        {"reason": "Failure", "usage": {}},
-        {"reason": "Rückfrage", "usage": {}},
+        {"issue": 2, "reason": "Failure", "usage": {"issue": {"tokens": 3000}}},
+        {"issue": 3, "reason": "Failure", "usage": {}},
+        {"issue": 4, "reason": "Rückfrage", "usage": {}},
     ]
 
     lines = metrics.summarize(merged, parked).splitlines()
 
-    assert "Geparkt: 3 (Failure 2, Rückfrage 1)" in lines
+    assert "Parks: 3 (Failure 2, Rückfrage 1)" in lines
     assert lines[-1] == "Tokens issue: Mittel 2000 je Issue"
+
+
+def test_tokens_of_a_parked_and_merged_issue_count_once(metrics):
+    parked = [
+        {"issue": 1, "reason": "Budget", "usage": {"issue": {"tokens": 1000}}},
+        {"issue": 1, "reason": "Budget", "usage": {"issue": {"tokens": 2000}}},
+    ]
+    merged = [merged_record(1, {"issue": {"tokens": 3000}})]
+
+    lines = metrics.summarize(merged, parked).splitlines()
+
+    assert lines[-1] == "Tokens issue: Mittel 3000 je Issue"
 
 
 @pytest.mark.parametrize("argv", [["park"], ["park", "a", "b"]])

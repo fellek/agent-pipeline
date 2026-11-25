@@ -124,8 +124,10 @@ def summarize(merged, parked=()):
         listed = ", ".join(
             f"{reason} {count}" for reason, count in sorted(reasons.items())
         )
-        lines.append(f"Geparkt: {len(parked)} ({listed})")
-    usages = [r["usage"] for r in [*merged, *parked] if r.get("usage")]
+        lines.append(f"Parks: {len(parked)} ({listed})")
+    # Usage grows over park and resume, so only the latest record of an issue counts.
+    latest = {r["issue"]: r for r in [*parked, *merged]}
+    usages = [r["usage"] for r in latest.values() if r.get("usage")]
     for step in sorted({step for usage in usages for step in usage}):
         tokens = [usage[step]["tokens"] for usage in usages if step in usage]
         lines.append(f"Tokens {step}: Mittel {statistics.mean(tokens):.0f} je Issue")
