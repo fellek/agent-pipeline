@@ -1360,27 +1360,66 @@ def test_retry_ends_when_the_issue_leaves_the_error_pause(pilot, command):
 def test_commit_or_push_in_a_read_only_step_is_blocked(pilot, moved, out):
     at_step(pilot, "plan-issue", refs=["c" * 40, ""])
     pilot.result(*moved, out=out)
-    finish(pilot, result())
+    assert finish(pilot, result()) == []
+    assert pilot.sent == [
+        (
+            (
+                "#7 plan-issue blockiert: Commit oder Push in einem lesenden Schritt "
+                "(oder ein Push auf issue-7-fix-the-thing), bitte prüfen, nach Behebung weiter"
+            ),
+            ("status",),
+        )
+    ]
     assert pilot.state["step"] == "plan-issue"
-    assert pilot.state["failure"] == "Commit oder Push in einem lesenden Schritt"
-    assert pilot.state["attempts"] == 1
+    assert pilot.state["paused"] is True
+    assert pilot.state["refs"] is None
+    assert not pilot.ran("leave-branch.py")
+    actions = message(pilot, "weiter")
+    assert actions[0]["skill"] == "pipeline:plan-issue"
+    # The step starts again from the state the maintainer left.
+    assert pilot.state["refs"] is not None
 
 
 def test_unchanged_refs_let_a_read_only_step_pass(pilot):
     at_step(pilot, "plan-issue", refs=["c" * 40, ""])
     finish(pilot, result())
     assert pilot.state["step"] == "issue"
+    assert pilot.state["refs"] is None
 
 
-def test_commit_in_the_search_is_no_answer(pilot):
+def test_blocked_search_is_reported_and_searches_again(pilot):
     at_step(
         pilot, "plan-issue", question=QUESTION, events_since="t0", refs=["c" * 40, ""]
     )
     pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
-    pilot.result("autopilot-poll.py", "next", out="")
-    finish(pilot, result(summary="use x"))
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 7, "body": "b"}),
+    )
+    assert finish(pilot, result(summary="use x")) == []
+    assert pilot.texts()[0].startswith("#7 find-answer blockiert")
     assert not pilot.ran("gh", "issue", "comment", "7")
-    assert pilot.state["parked"][0]["reason"] == "Rückfrage"
+    actions = message(pilot, "weiter")
+    assert actions[0]["skill"] == "pipeline:find-answer"
+    assert pilot.state["events_since"] == "t0"
+
+
+def test_rerun_and_restart_keep_the_refs(pilot):
+    at_step(pilot, "plan-issue", refs=["c" * 40, ""])
+    pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
+    pilot.event("start", "")
+    assert pilot.state["refs"] == ["c" * 40, ""]
+
+
+def test_stop_of_a_read_only_step_that_committed_does_not_park(pilot):
+    at_step(pilot, "plan-issue", refs=["c" * 40, ""])
+    message(pilot, "stop #7")
+    pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
+    pilot.event("stopped", "t1")
+    assert not pilot.ran("leave-branch.py")
+    assert pilot.state["paused"] is True
+    assert pilot.state["park"] == "abgebrochen"
 
 
 def test_start_of_a_read_only_step_stores_the_refs(pilot):
