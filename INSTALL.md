@@ -65,7 +65,7 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 
 - `.claude/skills/pipeline/host/autopilot-status.sh` zeigt Zustand, Log und Bildschirm der Session.
 - `systemctl --user status autopilot-<Repository>` zeigt den Dienst als `active (running)`. Bei Problemen: [Fehlersuche](docs/autopilot.md#fehlersuche).
-- Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Label.
+- Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Auswahl-Label.
 
 ## Weiteres Projekt auf demselben Host
 

@@ -1253,7 +1253,7 @@ class Autopilot:
             )
         else:
             parts.append("kein aktuelles Issue")
-        parts.append(f"Label {s['label']}")
+        parts.append(f"Auswahl-Label {s['label']}")
         if s["paused"]:
             parts.append("pausiert")
         if s["waiting_for"] in RUNNING:

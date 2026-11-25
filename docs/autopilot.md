@@ -9,7 +9,7 @@ Die Pfade unten gelten im Wurzelverzeichnis des Projekts; das Plugin liegt dort 
 Der Bot beantwortet `/help`, `/start` und `/status` selbst (Plugin), deshalb ohne Schrägstrich senden.
 
 - `help`: diese Liste
-- `status`: Issue, Schritt, Versuche, Label und geparkte Issues
+- `status`: Issue, Schritt, Versuche, Auswahl-Label und geparkte Issues
 - `pause`: hält nach dem laufenden Schritt an
 - `weiter`: setzt nach Pause oder Fehler fort
 - `/<task> <n>`: startet im Pausenzustand den Schritt (`plan-issue`, `issue`, `review-issue` oder `fix-review`); die Pipeline läuft danach bis zum Merge weiter, die Grenzen gelten unverändert; ein anderes aktuelles Issue wird geparkt
