@@ -113,6 +113,10 @@ PARKED_FIELDS = (
     "question",
     "failure",
 )
+CI_DETAILS = {
+    "missing": "kein CI-Lauf gefunden",
+    "timeout": "CI nach 45 Minuten nicht fertig",
+}
 RUNNING = ("step", "review_ci", "ci", "merge_ci")
 # The longest background call: two CI waits of 45 minutes each.
 BACKGROUND_MS = 7_200_000
@@ -575,11 +579,11 @@ class Autopilot:
         counts = self.s["attempts_per_step"]
         counts[step] = counts.get(step, 0) + 1
         self.log("start")
+        if step == "review-issue":
+            self.start_review_ci()
         # Kept over reruns and restarts, so a commit never becomes the baseline.
         if step in CLEAN_STEPS and self.s["refs"] is None:
             self.s["refs"] = self.refs()
-        if step == "review-issue":
-            self.start_review_ci()
         self.start_skill(step, answer, self.s["failure"] or "")
         self.s["waiting_for"] = "step"
         self.s["pending"] = "step"
@@ -867,6 +871,9 @@ class Autopilot:
         last = out.splitlines()[-1] if out else ""
         if self.task_file("step", ".exit") == "0" and last == "green":
             if not hold:
+                # Only now: a red run goes to fix-review, which commits.
+                if self.s["refs"] is None:
+                    self.s["refs"] = self.refs()
                 self.background(f"step gate review {self.s['pr']} {self.s['head']}")
                 self.s["waiting_for"] = "step"
                 self.s["pending"] = "step"
@@ -878,7 +885,7 @@ class Autopilot:
             summary = f"CI rot: {url} (Log: {log})"
             self.changes_requested(url, "", hold, failure=summary)
         else:
-            self.failure(out or "CI ohne Ergebnis", hold)
+            self.failure(CI_DETAILS.get(last, out or "CI ohne Ergebnis"), hold)
         self.after_hold(hold)
 
     def start_ci(self):
@@ -957,10 +964,7 @@ class Autopilot:
         paused = self.s["paused"]
         if red:
             last = out.splitlines()[-1]
-            detail = {
-                "missing": "kein CI-Lauf gefunden",
-                "timeout": "CI nach 45 Minuten nicht fertig",
-            }.get(last, last.removeprefix("red "))
+            detail = CI_DETAILS.get(last, last.removeprefix("red "))
         # Commands that can fail first: a repeated event must not record twice.
         state = self.ok(
             "gh", "issue", "view", str(n), "--json", "state", "--jq", ".state"

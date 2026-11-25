@@ -1538,7 +1538,7 @@ def test_missing_ci_before_the_review_is_a_failure(pilot):
     at_review_ci(pilot)
     actions = finish(pilot, out="missing", code=1)
     assert pilot.state["step"] == "review-issue"
-    assert pilot.state["failure"] == "missing"
+    assert pilot.state["failure"] == "kein CI-Lauf gefunden"
     assert actions[0]["background"].startswith("autopilot-task.py step watch-ci.py")
 
 
@@ -1642,3 +1642,23 @@ def test_not_mergeable_pull_request_merges_the_default_branch(pilot, mergeable):
     finish(pilot, out=result(verdict="approve"))
     assert pilot.ran("merge-default-branch.py")
     assert not pilot.ran("gh", "api")
+
+
+def test_fix_review_after_red_ci_may_commit(pilot):
+    at_step(pilot, "fix-review")
+    finish(pilot, result())
+    assert pilot.state["refs"] is None
+    pilot.event("started", "t1")
+    pilot.task("step", "red https://run/3", code=1)
+    finish(pilot)
+    pilot.event("started", "t1")
+    pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
+    actions = finish(pilot, result())
+    assert pilot.state["paused"] is False
+    assert actions[0]["background"].startswith("autopilot-task.py step watch-ci.py")
+
+
+def test_green_ci_records_the_refs_for_the_review(pilot):
+    at_review_ci(pilot)
+    finish(pilot, out="green", code=0)
+    assert pilot.state["refs"] == ["c" * 40, ""]
