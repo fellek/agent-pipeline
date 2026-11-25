@@ -757,10 +757,19 @@ def test_message_stores_the_chat_and_stops_the_poller(pilot, tmp_path):
     assert actions[0]["background"].startswith("autopilot-task.py poller")
 
 
-def test_unknown_text_asks_for_the_prefix(pilot):
+def test_unknown_text_points_to_help_and_the_answer_format(pilot):
     at_step(pilot, "issue")
     message(pilot, "hello")
-    assert pilot.texts() == ["Bitte mit #7 antworten"]
+    assert pilot.texts() == [
+        "Unbekannter Befehl, help listet alle. Antwort auf eine Rückfrage: #7 <text>"
+    ]
+
+
+def test_bare_issue_number_is_no_command(pilot):
+    message(pilot, "#82")
+    assert pilot.texts() == [
+        "Unbekannter Befehl, help listet alle. Antwort auf eine Rückfrage: #<n> <text>"
+    ]
 
 
 def test_status_reports_issue_label_and_parked(pilot):
