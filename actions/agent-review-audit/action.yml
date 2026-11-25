@@ -1,0 +1,22 @@
+name: agent-review-audit
+description: 'Open a followup issue for a commit on the default branch that is no merge of a pull request with an attested approve and passed runs'
+inputs:
+  sha:
+    description: Commit pushed to the default branch
+    required: true
+  github-token:
+    description: Token with read access to pull requests, reviews and Actions and write access to issues
+    default: ${{ github.token }}
+  review-key:
+    description: Review key of the gate (secret PIPELINE_REVIEW_KEY); without it the audit only warns
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        SHA: ${{ inputs.sha }}
+        PIPELINE_REVIEW_KEY: ${{ inputs.review-key }}
+      run: '"$GITHUB_ACTION_PATH/../../bin/agent-review.py" audit "$SHA"'

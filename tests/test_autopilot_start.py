@@ -43,7 +43,9 @@ esac""",
         "; exit ${RULESET_EXIT-0}",
     )
     write_executable(plugin_bin / "telegram-send.py", 'cat > "$TELEGRAM_OUT"')
-    for cmd in ("gh", "bun", "bwrap", "socat"):
+    write_executable(plugin_bin / "gate", 'exit "${GATE_EXIT-0}"')
+    copy_scripts(scripts, "gate.py")
+    for cmd in ("gh", "sudo", "bun", "bwrap", "socat"):
         write_executable(stubs / cmd, "exit 0")
 
     def run(*args, env=None, cwd=app):
@@ -56,6 +58,8 @@ esac""",
                 "TELEGRAM_BOT_TOKEN": "t",
                 "RULESET_ARGS": str(tmp_path / "ruleset_args"),
                 "TELEGRAM_OUT": str(tmp_path / "telegram"),
+                "PIPELINE_GATE": str(scripts / "gate.py"),
+                "HOME": str(tmp_path / "home"),
                 **(env or {}),
             },
             check=False,
@@ -225,3 +229,35 @@ def test_fails_without_sandbox_tools(run_start, tmp_path, cmd):
     result, *_ = run_start(env={"PATH": f"{tmp_path / 'bin'}:{system}"})
     assert result.returncode == 1
     assert f"{cmd} is missing" in result.stderr
+
+
+def test_refuses_without_working_gate(run_start):
+    result, tmux_args, *_ = run_start(env={"GATE_EXIT": "1"})
+    assert result.returncode == 1
+    assert "the gate does not reach the repository" in result.stderr
+    assert tmux_args == []
+
+
+@pytest.mark.parametrize("variable", ["GH_TOKEN", "GITHUB_TOKEN"])
+def test_refuses_with_own_token_in_environment(run_start, variable):
+    result, _tmux_args, *_ = run_start(env={variable: "t"})
+    assert result.returncode == 1
+    assert "holds a GitHub token of its own" in result.stderr
+
+
+def test_refuses_with_own_gh_login(run_start, tmp_path):
+    hosts = tmp_path / "home" / ".config" / "gh" / "hosts.yml"
+    hosts.parent.mkdir(parents=True)
+    hosts.write_text("github.com:\n    oauth_token: t\n")
+    result, _tmux_args, *_ = run_start()
+    assert result.returncode == 1
+    assert "holds a GitHub token of its own" in result.stderr
+
+
+def test_warns_about_a_stale_gate(run_start, tmp_path):
+    stale = tmp_path / "stale-gate"
+    stale.write_text("old")
+    result, tmux_args, *_ = run_start(env={"PIPELINE_GATE": str(stale)})
+    assert result.returncode == 0, result.stderr
+    assert "differs from host/gate.py" in (tmp_path / "telegram").read_text()
+    assert tmux_args[-1] == "/pipeline:autopilot ready"

@@ -14,6 +14,7 @@
 - New behavior requires tests in the same PR.
 - Run all checks listed in `.claude/rules/project.md` before every push. All must pass.
 - NEVER push to `<default>`. Merge a PR only when CI and `agent-review` are green on its head commit.
+- On a host with the gate ([INSTALL.md](../INSTALL.md)) the session holds no GitHub token: `gh` and `git` reach GitHub only through the gate. Name pull requests by number or branch and open one with `gh pr create --head <branch>`; pass a body inline or with `--body-file -`. Pushes go only to `issue-*` and `bump-pipeline-*` branches, never forced. Only `gate review` posts a review that counts, and only `gate merge` merges.
 - A merged PR's head branch is deleted right after the merge. The repo setting "Automatically delete head branches" handles this; if a merged branch still exists, delete it.
 - When the work is finished, post a brief comment on the issue with the PR link and open points.
 
@@ -65,6 +66,6 @@ These apply to commits, PRs, issues, comments and docs, and override any attribu
 - Always check existing review comments.
 - If you are asked to change something, commit to the original PR branch and push to it.
 - Review in a fresh session, never in the session that wrote the code.
-- Run all checks listed in `.claude/rules/project.md` on the PR branch as part of the review.
+- Run all checks listed in `.claude/rules/project.md` on the PR branch as part of the review. A review by the gate runs no commands; it judges the checks by the CI runs of the head commit.
 - Check the diff against the acceptance criteria of the issue, the pipeline rules and the project rules.
 - Post each finding as an inline review comment: what, why, suggested fix. Start the review summary with `Verdict: approve` or `Verdict: changes requested`.

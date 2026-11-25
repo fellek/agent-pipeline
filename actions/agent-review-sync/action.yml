@@ -10,6 +10,9 @@ inputs:
   github-token:
     description: Token with read access to the pull request's reviews and write access to Actions
     default: ${{ github.token }}
+  review-key:
+    description: Review key of the gate (secret PIPELINE_REVIEW_KEY); without it a review counts without attestation
+    default: ''
 runs:
   using: composite
   steps:
@@ -19,4 +22,5 @@ runs:
         GH_REPO: ${{ github.repository }}
         PR: ${{ inputs.pr }}
         HEAD_SHA: ${{ inputs.head-sha }}
+        PIPELINE_REVIEW_KEY: ${{ inputs.review-key }}
       run: '"$GITHUB_ACTION_PATH/../../bin/agent-review.py" sync "$PR" "$HEAD_SHA"'

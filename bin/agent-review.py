@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Check that the latest review on the head commit starts with `Verdict: approve`.
+"""Check that the latest review on the head commit is an approve of the gate.
 
-Without `sync` it fails unless it does; the `agent-review` check runs this.
+With the Actions secret PIPELINE_REVIEW_KEY in the environment only reviews with a
+valid attestation of the gate count (see attestation.py). Without it, the latest
+review whose first line is `Verdict: approve` counts, with a warning, until the
+secret is set.
+
+Without `sync` or `audit` it fails unless the review is an approve; the
+`agent-review` check runs this.
 
 `sync` brings the latest `agent-review` run of the `pull_request` event on the head
 commit in line with the verdict: it waits while the run is not completed and re-runs
@@ -9,15 +15,23 @@ it if its result differs. Prints `green`, `red <run url>` or `missing`; exits 1
 unless the run ends in line with the verdict, so a red run after a review without
 an approve is no failure.
 
+`audit` checks a commit pushed to the default branch: it must be the merge of a
+pull request whose head has an attested approve and passed runs. Otherwise it
+opens a followup issue and exits 1. Without the key it only warns.
+
 Usage:
   agent-review.py <pr> <head_sha>
   agent-review.py sync <pr> <head_sha>
+  agent-review.py audit <sha>
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
+
+import attestation
 
 APPROVE = "Verdict: approve"
 WORKFLOW = "agent-review.yml"
@@ -41,7 +55,27 @@ def reviews(pr):
     return [review for page in pages for review in page]
 
 
-def approved(reviews, head_sha):
+def review_key():
+    return os.environ.get("PIPELINE_REVIEW_KEY") or None
+
+
+def warn_without_key():
+    print(
+        "::warning::PIPELINE_REVIEW_KEY is not set, so a review counts without "
+        "attestation of the gate",
+        file=sys.stderr,
+    )
+
+
+def approved(reviews, pr, head_sha, key):
+    if key:
+        verdict = attestation.latest_verdict(reviews, key, pr, head_sha)
+        return verdict == attestation.APPROVE
+    warn_without_key()
+    return text_approved(reviews, head_sha)
+
+
+def text_approved(reviews, head_sha):
     # Replies to inline threads create reviews with an empty body.
     verdicts = [
         r["body"].strip()
@@ -106,10 +140,66 @@ def sync(pr, head_sha):
     if run is None:
         return "missing", False
     green = wait(run)
-    approve = approved(reviews(pr), head_sha)
+    approve = approved(reviews(pr), pr, head_sha, review_key())
     if green != approve:
         green = rerun(run) and wait(run)
     return ("green" if green else f"red {run['url']}"), green == approve
+
+
+def merged_pull_request(sha):
+    pulls = gh_json("api", f"repos/{{owner}}/{{repo}}/commits/{sha}/pulls")
+    return next(
+        (p for p in pulls if p["merged_at"] and p["merge_commit_sha"] == sha), None
+    )
+
+
+def audit_problems(sha, key):
+    pull = merged_pull_request(sha)
+    if pull is None:
+        return ["no merged pull request has this commit as its merge"]
+    pr, head = pull["number"], pull["head"]["sha"]
+    problems = []
+    if attestation.latest_verdict(reviews(pr), key, pr, head) != attestation.APPROVE:
+        problems.append(f"#{pr} has no attested approve on its head {head}")
+    runs = gh_json(
+        "run",
+        "list",
+        "--commit",
+        head,
+        "--limit",
+        "100",
+        "--json",
+        "name,status,conclusion",
+    )
+    if failed := attestation.failed_runs(runs):
+        problems.append(f"#{pr} merged with runs not passed: {', '.join(failed)}")
+    return problems
+
+
+def audit(sha):
+    key = review_key()
+    if not key:
+        warn_without_key()
+        return
+    problems = audit_problems(sha, key)
+    if not problems:
+        return
+    body = "\n".join(f"- {problem}" for problem in problems)
+    subprocess.run(
+        [
+            "gh",
+            "issue",
+            "create",
+            "--label",
+            "followup",
+            "--title",
+            f"Merge ohne gültige Review-Attestierung: {sha[:12]}",
+            "--body",
+            f"Commit {sha} auf dem Default-Branch:\n\n{body}",
+        ],
+        check=True,
+    )
+    sys.exit("\n".join(problems))
 
 
 def main(argv):
@@ -119,9 +209,11 @@ def main(argv):
             print(result)
             if not in_line:
                 sys.exit(1)
-        case [pr, head_sha] if pr != "sync":
-            if not approved(reviews(pr), head_sha):
-                sys.exit(f"No '{APPROVE}' review for {head_sha}")
+        case ["audit", sha]:
+            audit(sha)
+        case [pr, head_sha] if pr not in ("sync", "audit"):
+            if not approved(reviews(pr), pr, head_sha, review_key()):
+                sys.exit(f"No approve of the gate for {head_sha}")
         case _:
             sys.exit(__doc__)
 

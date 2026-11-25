@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 from fnmatch import fnmatch
@@ -184,6 +185,8 @@ def test_template_allows_every_plugin_command():
         "permissions"
     ]["allow"]
     for script in (ROOT / "bin").glob("*.*"):
+        if not os.access(script, os.X_OK):
+            continue
         assert f"Bash({script.name}*)" in allow, script.name
 
 
@@ -346,4 +349,7 @@ def test_fails_without_sandbox(app):
 def test_template_runs_the_pipeline_commands_outside_the_sandbox():
     settings = json.loads((TEMPLATES / "claude" / "settings.json").read_text())
     allow = [r[5:-1] for r in settings["permissions"]["allow"] if r.startswith("Bash(")]
-    assert settings["sandbox"]["excludedCommands"] == allow
+    excluded = settings["sandbox"]["excludedCommands"]
+    assert set(allow) <= set(excluded)
+    # gh goes through sudo to the gate, which fails inside the sandbox.
+    assert "gh *" in excluded

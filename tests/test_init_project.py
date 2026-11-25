@@ -14,6 +14,7 @@ COPIED = (
     ".claude/rules/project.md",
     ".github/workflows/agent-review.yml",
     ".github/workflows/agent-review-sync.yml",
+    ".github/workflows/agent-review-audit.yml",
 )
 
 

@@ -12,3 +12,7 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+# agent-review.py and the gate import attestation.py from bin.
+pythonpath = ["bin"]
