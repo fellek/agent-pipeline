@@ -19,7 +19,7 @@ If set, check that cause first and do not repeat the same approach.
 
 1. Read the issue with `issue-text.py $0`, which prints only the text you may read; do not read the issue or its comments any other way. If it exits non-zero, end with `STATUS: blocked` and its message as `SUMMARY`.
 2. Read the affected code.
-3. Post one issue comment with:
+3. Post the plan with `post-plan.py $0`, the text on stdin; it edits the plan comment of an earlier run instead of posting a second one. The plan holds:
    - approach in a few sentences
    - affected files
    - tests to add or change
