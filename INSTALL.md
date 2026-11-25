@@ -1,0 +1,63 @@
+# Installation auf einem Linux-Host
+
+Von einem frischen Linux-Host mit systemd zu einem laufenden Autopilot-Dienst für ein Projekt. Betrieb und Fehlersuche: [docs/autopilot.md](docs/autopilot.md).
+
+## 1. Benutzer und Werkzeuge
+
+Als root:
+
+1. Einen Linux-Benutzer je Projekt anlegen und `loginctl enable-linger <benutzer>` ausführen, damit sein Dienst ohne Anmeldung läuft.
+2. `git`, `gh`, `tmux` und `python3` (für die Skripte in `bin/`, `host/` und `hooks/`) installieren.
+
+Als Projekt-Benutzer:
+
+3. `claude` (mindestens 2.1.239) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`.
+4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
+
+`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `tmux`, `bun`, die `gh`-Anmeldung, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
+
+## 2. GitHub (als Projekt-Benutzer)
+
+1. Einen fine-grained Token nur für das Projekt-Repository anlegen, mit den Rechten Contents, Issues und Pull requests (Lesen und Schreiben) sowie Actions und Metadata (Lesen). `gh pr checks` braucht `checks=read`, das fine-grained Tokens nicht anbieten; der Autopilot nutzt deshalb `gh run`.
+2. `gh auth login` mit diesem Token, dann `gh auth setup-git`.
+
+## 3. Projekt (als Projekt-Benutzer)
+
+Eine der drei Varianten:
+
+- **Neues Projekt**: im Wurzelverzeichnis des Projekts, aus einem Klon dieses Repositorys, `host/init-project.sh <tag>` ausführen ([was es tut](docs/autopilot.md#einrichtung-eines-projekts)) und die Schritte abarbeiten, die es am Ende listet: Commit, Trust-Dialog (siehe 4.), Checks in `.claude/rules/project.md` und in der CI, deren Allow-Regeln in `.claude/settings.json`, Ruleset und automatisches Löschen der Head-Branches (siehe 5.).
+- **Projekt, das die Pipeline schon enthält**: klonen, dann `git submodule update --init && git config submodule.recurse true`.
+- **Dieses Repository**: es kann nicht sein eigenes Submodul sein. Klonen, dann `host/use-release.sh <tag>`; das checkt das Release als Worktree unter `.claude/skills/pipeline` aus (gitignored). Die Labels legt `host/create-labels.sh` an.
+
+## 4. Claude Code (als Projekt-Benutzer)
+
+Im Projektverzeichnis `claude` starten, `/login` ausführen und den Ordner als vertrauenswürdig bestätigen. Ohne diese Bestätigung lädt Claude Code weder das Plugin noch die Allow-Liste aus `.claude/settings.json`.
+
+## 5. Repository-Einstellungen (im Browser)
+
+Der Token hat kein Administration-Recht, deshalb von Hand:
+
+1. Settings, General: "Automatically delete head branches" einschalten.
+2. Settings, Rules, Rulesets: ein aktives Ruleset auf dem Default-Branch ohne Bypass-Liste mit "Require a pull request" (0 Approvals), "Require status checks" für die CI des Projekts und `agent-review` sowie blockierten Force-Pushes und Löschungen. Für dieses Repository heißen die Status-Checks `checks` und `agent-review`. Was `agent-review` prüft und was ohne durchgesetztes Ruleset gilt: [Merge und Review](docs/autopilot.md#merge-und-review).
+
+## 6. Telegram (als Projekt-Benutzer)
+
+1. Bei [@BotFather](https://t.me/BotFather) `/newbot` senden und den Token kopieren. Jedes Projekt braucht einen eigenen Bot.
+2. In `claude`: `/plugin install telegram@claude-plugins-official` (User-Scope), dann `/telegram:configure <token>`. Der Token landet in `~/.claude/channels/telegram/.env`, nicht im Repository.
+3. Session beenden und `claude --channels plugin:telegram@claude-plugins-official` starten. Dem Bot schreiben, den Code mit `/telegram:access pair <code>` bestätigen, danach `/telegram:access policy allowlist`, damit nur der Maintainer den Bot erreicht.
+4. Session beenden.
+
+## 7. Dienst (als Projekt-Benutzer, im Projektverzeichnis)
+
+1. `.claude/skills/pipeline/host/check-fork.sh` muss `OK: forked skill is isolated` melden (Forks dürfen die Unterhaltung nicht sehen).
+2. `.claude/skills/pipeline/host/install-service.sh [<label>]` schreibt den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` und startet ihn; Default-Label `ready`. Projekt- und Plugin-Pfad dürfen nur `A-Za-z0-9._/-` enthalten. Für dieses Repository aus dem Release-Worktree aufrufen, damit der Dienst nicht den Arbeitsstand ausführt.
+
+## 8. Prüfen
+
+- `.claude/skills/pipeline/host/autopilot-status.sh` zeigt Zustand, Log und Bildschirm der Session.
+- `systemctl --user status autopilot-<Repository>` zeigt den Dienst als `active (running)`. Bei Problemen: [Fehlersuche](docs/autopilot.md#fehlersuche).
+- Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Label.
+
+## Weiteres Projekt auf demselben Host
+
+Für jedes weitere Projekt als root einen eigenen Linux-Benutzer mit Linger anlegen (1.1), dann als dieser Benutzer `claude` und `bun` installieren (1.3) und alle weiteren Schritte mit eigenem Token und eigenem Telegram-Bot wiederholen; jeder Benutzer hat seinen eigenen Dienst ([Betrieb](docs/autopilot.md#betrieb)).
