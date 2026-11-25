@@ -79,6 +79,8 @@ ISSUE_FIELDS = {
     "attempts_per_step": {},
     # Started forks of the issue, against ISSUE_FORKS.
     "fork_runs": 0,
+    # The answer for the step that the daily budget held back.
+    "held_answer": None,
     "questions": 0,
     "failure": None,
     "task_id": None,
@@ -571,9 +573,8 @@ class Autopilot:
         for field in PARKED_FIELDS:
             if field != "question":
                 self.s[field] = entry.get(field, ISSUE_FIELDS[field])
-        if entry["reason"] == "Budget":
-            # The maintainer's answer grants a new budget.
-            self.s["fork_runs"] = 0
+        # The maintainer's answer grants a new budget.
+        self.s["fork_runs"] = 0
         self.s.update(pr=pr, waiting_for=None, question=None)
         self.log("resume")
         self.run_step(entry["answer"])
@@ -585,6 +586,7 @@ class Autopilot:
     def run_step(self, answer=""):
         """Loop step 4: start the step of the current issue."""
         step = self.s["step"]
+        answer, self.s["held_answer"] = answer or self.s["held_answer"] or "", None
         # The session may have ended between the merge and the reset of the state.
         if self.s["pr"] and self.merged():
             self.log("already merged")
@@ -593,7 +595,7 @@ class Autopilot:
         if self.s["question"]:
             # `weiter` after a blocked search.
             self.search_answer(count=False)
-        self.check_budget()
+        self.check_budget(answer)
         if step != "setprio":
             self.set_label(self.s["issue"], STEP_LABELS[step])
         counts = self.s["attempts_per_step"]
@@ -612,17 +614,21 @@ class Autopilot:
     def background(self, task):
         self.act(background=f"autopilot-task.py {task}", timeout=BACKGROUND_MS)
 
-    def check_budget(self):
+    def check_budget(self, answer=""):
         n = self.s["issue"]
         if self.s["fork_runs"] >= ISSUE_FORKS:
-            self.send(f"#{n} Budget erreicht: {self.s['fork_runs']} Fork-Läufe")
-            self.park("Budget")
+            self.send(
+                f"#{n} geparkt, Budget erreicht: {self.s['fork_runs']} Fork-Läufe",
+                f"#{n} weiter",
+                "status",
+            )
+            self.park("Budget", answer or None)
         today = now()[:10]
         if self.s["day"] != today:
             self.s.update(day=today, day_forks=0)
         if self.s["day_forks"] >= DAY_FORKS:
             # `weiter` grants the next DAY_FORKS.
-            self.s["day_forks"] = 0
+            self.s.update(day_forks=0, held_answer=answer or None)
             self.send(
                 f"Tagesbudget erreicht: {DAY_FORKS} Fork-Läufe heute, "
                 f"weiter gibt {DAY_FORKS} weitere frei",
@@ -811,6 +817,7 @@ class Autopilot:
         self.search_answer()
 
     def search_answer(self, count=True):
+        self.check_budget()
         if count:
             self.s["events_since"] = self.github_now()
         if self.s["refs"] is None:
@@ -1077,6 +1084,7 @@ class Autopilot:
                 self.wait()
         n = self.s["issue"]
         was_paused = self.s["paused"]
+        answer = answer or self.s["held_answer"]
         self.set_label(n, "parked")
         patch = reason == "Patch"
         entry = {field: self.s[field] for field in PARKED_FIELDS}
@@ -1091,7 +1099,7 @@ class Autopilot:
         self.log(f"park {reason}")
         self.s["parked"].append(entry)
         self.reset(keep_paused=True)
-        if reason not in ("Rückfrage", "Patch"):
+        if reason not in ("Rückfrage", "Patch", "Budget"):
             self.send(f"#{n} geparkt ({reason})", f"#{n} weiter", "status")
         if was_paused:
             self.s["waiting_for"] = "resume"
@@ -1353,8 +1361,7 @@ class Autopilot:
             self.s["parked"].remove(entry)
             for field in PARKED_FIELDS:
                 self.s[field] = entry.get(field, ISSUE_FIELDS[field])
-            if entry["reason"] == "Budget":
-                self.s["fork_runs"] = 0
+            self.s["fork_runs"] = 0
             self.s["question"] = None
             if lookup and lookup["pr"]:
                 self.s["pr"] = lookup["pr"]
