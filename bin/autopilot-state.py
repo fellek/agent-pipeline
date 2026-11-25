@@ -34,6 +34,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 
 def pipeline_dir():
@@ -52,6 +53,8 @@ PLUGIN = Path(__file__).resolve().parents[1]
 MAX_ATTEMPTS = 3
 REVIEW_INFO_ROUNDS = 3
 REVIEW_LIMIT_ROUNDS = 5
+# Merges of the default branch per issue before it is parked.
+SYNC_LIMIT = 3
 MAX_POLL_FAILURES = 3
 STATUS_LABELS = ["ready", "in-progress", "in-review", "approved", "question", "parked"]
 STEP_LABELS = {
@@ -69,6 +72,7 @@ ISSUE_FIELDS = {
     "step": None,
     "attempts": 0,
     "review_rounds": 0,
+    "sync_rounds": 0,
     "waiting_for": None,
     "question": None,
     "events_since": None,
@@ -790,11 +794,47 @@ class Autopilot:
 
     # step 7 and merge
 
+    def needs_default_branch(self):
+        """Only a conflict or a required up-to-date branch: each merge costs CI."""
+        mergeable = self.ok(
+            "gh",
+            "pr",
+            "view",
+            str(self.s["pr"]),
+            "--json",
+            "mergeable",
+            "--jq",
+            ".mergeable",
+        )
+        if mergeable != "MERGEABLE":
+            return True
+        rules = f"repos/{{owner}}/{{repo}}/rules/branches/{quote(self.default_branch(), safe='')}"
+        strict = self.ok(
+            "gh",
+            "api",
+            rules,
+            "--jq",
+            '[.[] | select(.type == "required_status_checks")'
+            " | .parameters.strict_required_status_checks_policy] | any",
+        )
+        return strict == "true"
+
     def step_seven(self):
+        if not self.needs_default_branch():
+            self.start_ci()
         code, out, err = self.run("merge-default-branch.py")
         if out == "merged":
+            self.s["sync_rounds"] += 1
             self.ok("git", "push", "origin", self.s["branch"])
             self.log("merged default branch")
+            if self.s["sync_rounds"] > SYNC_LIMIT:
+                self.park("Default-Branch zu oft nachgezogen")
+            # Without a change to the files of the pull request the approve carries over.
+            head = self.ok("git", "rev-parse", "HEAD")
+            carried, _, _ = self.run("gate", "carry", str(self.s["pr"]), head)
+            if carried == 0:
+                self.log("approve carried")
+                self.start_ci()
             self.run_step()
         if out == "conflict":
             self.conflict()
