@@ -13,6 +13,7 @@ COMMANDS = [
     "stop #<n>",
     "/verbose",
     "label <name>",
+    "update",
     "#<n> <text>",
     "/<task> <n>",
     "plan-issue",
@@ -66,3 +67,25 @@ def test_pipeline_finding_reaches_maintainer():
         "`PIPELINE_FINDING: <comment url>` line, send "
         "`#<n> Pipeline-Befund: <comment url>`" in skill
     )
+
+
+def test_orchestrator_restarts_on_new_pinned_release():
+    skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
+    step3 = next(line for line in skill.splitlines() if line.startswith("3. "))
+    restart = skill.split("\n## Restart\n")[1].split("\n## ")[0]
+    assert "just invoked, run `release-changed.sh record`" in skill
+    assert step3.startswith(
+        "3. Without a current issue, first run `release-changed.sh`"
+    )
+    assert "Restart with" in step3
+    assert "`.claude/pipeline-release` exists" in restart
+    assert "`.claude/skills/pipeline/host/use-release.sh`" in restart
+    assert "`autopilot-restart.sh`" in restart
+
+
+def test_update_command_runs_routine():
+    skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
+    update = next(line for line in skill.splitlines() if line.startswith("- `update`"))
+    assert "`release-changed.sh`" in update
+    assert "`.claude/skills/pipeline/host/update-pipeline.sh`" in update
+    assert "Restart with" in update
