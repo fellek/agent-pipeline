@@ -275,6 +275,8 @@ def test_issue_done_stores_the_pull_request(pilot):
 def test_ci_runs_before_the_review(pilot, step):
     at_step(pilot, step)
     actions = finish(pilot, result())
+    assert pilot.state["step"] == "review-issue"
+    assert pilot.labels() == ["in-review"]
     assert pilot.state["waiting_for"] == "review_ci"
     assert actions == [
         {
@@ -284,15 +286,14 @@ def test_ci_runs_before_the_review(pilot, step):
     ]
 
 
-def at_review_ci(pilot, step="issue", **fields):
+def at_review_ci(pilot, step="review-issue", **fields):
     at_step(pilot, step, waiting_for="review_ci", head="a" * 40, **fields)
 
 
 def test_review_runs_through_the_gate_after_green_ci(pilot):
     at_review_ci(pilot)
-    actions = finish(pilot, out="green\ngreen", code=0)
-    assert pilot.state["step"] == "review-issue"
-    assert pilot.labels() == ["in-review"]
+    actions = finish(pilot, out="green", code=0)
+    assert pilot.state["waiting_for"] == "step"
     assert actions == [
         {
             "background": f"autopilot-task.py step gate review 5 {'a' * 40}",
@@ -533,7 +534,7 @@ def test_merged_default_branch_pushes_and_reviews_again(pilot):
     pilot.result("gate", "carry", code=1, err="changed files")
     actions = finish(pilot, out=result(verdict="approve"))
     assert pilot.ran("git", "push", "origin", "issue-7-fix-the-thing")
-    assert actions[0]["background"].startswith("autopilot-task.py step gate review")
+    assert actions[0]["background"].startswith("autopilot-task.py step watch-ci.py")
 
 
 def test_conflict_parks(pilot):
@@ -570,7 +571,7 @@ def test_red_ci_is_a_failure(pilot, out):
     at_ci(pilot)
     actions = finish(pilot, out=out, code=1)
     assert pilot.state["failure"] == out
-    assert actions[0]["background"].startswith("autopilot-task.py step gate review")
+    assert actions[0]["background"].startswith("autopilot-task.py step watch-ci.py")
 
 
 def test_open_review_threads_go_to_fix_review(pilot):
@@ -964,7 +965,7 @@ def test_task_starts_a_step_for_any_issue(pilot):
     assert pilot.state["pr"] == 8
     assert pilot.state["review_rounds"] == 2
     assert pilot.state["paused"] is False
-    assert actions[0]["background"].endswith(f"gate review 8 {'d' * 40}")
+    assert actions[0]["background"].endswith(f"watch-ci.py issue-9-y {'d' * 40}")
 
 
 def test_task_without_a_pull_request(pilot):
@@ -1208,7 +1209,9 @@ def test_review_without_a_verdict_is_a_failure(pilot):
     at_step(pilot, "review-issue")
     actions = finish(pilot, out=result())
     assert pilot.state["failure"] == "Kein Verdict: s"
-    assert actions[0]["background"].endswith(f"gate review 5 {'a' * 40}")
+    assert actions[0]["background"].endswith(
+        f"watch-ci.py issue-7-fix-the-thing {'a' * 40}"
+    )
 
 
 def test_open_review_threads_name_the_threads_at_the_limit(pilot):
@@ -1312,7 +1315,9 @@ def test_failed_command_in_a_restart_is_repeated_by_weiter(pilot):
     assert pilot.state["waiting_for"] == "resume"
     pilot.result("gh", "pr", "view", "5", "--json", "headRefOid", out="a" * 40)
     actions = message(pilot, "weiter")
-    assert actions[0]["background"].endswith(f"gate review 5 {'a' * 40}")
+    assert actions[0]["background"].endswith(
+        f"watch-ci.py issue-7-fix-the-thing {'a' * 40}"
+    )
 
 
 def test_unexpected_error_keeps_the_state_and_pauses(pilot):
@@ -1496,32 +1501,45 @@ def test_restart_with_a_pending_park_checks_the_refs(pilot):
     assert pilot.state["paused"] is True
 
 
-@pytest.mark.parametrize("step", ["issue", "fix-review"])
-def test_red_ci_goes_to_fix_review_without_a_review(pilot, step):
-    at_review_ci(pilot, step)
-    actions = finish(pilot, out="green\nred https://run/3", code=1)
+def test_red_ci_goes_to_fix_review_without_a_review(pilot):
+    at_review_ci(pilot)
+    actions = finish(pilot, out="red https://github.com/o/app/actions/runs/31", code=1)
     assert not pilot.ran("gate", "review")
     assert pilot.state["step"] == "fix-review"
-    assert pilot.state["attempts"] == 1
+    assert pilot.state["review_rounds"] == 1
     assert pilot.state["failure"] == (
-        "CI rot: https://run/3 (Log: gh run view <id> --log-failed)"
+        "CI rot: https://github.com/o/app/actions/runs/31"
+        " (Log: gh run view 31 --log-failed)"
     )
     assert actions[0]["skill"] == "pipeline:fix-review"
-    assert "CI rot: https://run/3" in actions[0]["args"]
+    assert "gh run view 31 --log-failed" in actions[0]["args"]
 
 
-def test_red_ci_three_times_parks(pilot):
-    at_review_ci(pilot, "fix-review", attempts=2)
+def test_red_ci_counts_as_a_review_round_up_to_the_limit(pilot):
+    at_review_ci(pilot, review_rounds=4)
     pilot.result("autopilot-poll.py", "next", out="")
     finish(pilot, out="red https://run/3", code=1)
-    assert pilot.state["parked"][0]["reason"] == "Fehlversuche"
+    entry = pilot.state["parked"][0]
+    assert entry["reason"] == "Review-Limit"
+    assert entry["failure"].startswith("CI rot: https://run/3")
+
+
+def test_resumed_fix_review_after_red_ci_gets_the_run(pilot):
+    pilot.state = {
+        "parked": [
+            parked(answer="weiter", step="fix-review", failure="CI rot: https://run/3")
+        ]
+    }
+    actions = pilot.event("start", "")
+    assert actions[0]["args"] == '4 "weiter" "CI rot: https://run/3"'
 
 
 def test_missing_ci_before_the_review_is_a_failure(pilot):
     at_review_ci(pilot)
-    finish(pilot, out="missing", code=1)
-    assert pilot.state["step"] == "issue"
+    actions = finish(pilot, out="missing", code=1)
+    assert pilot.state["step"] == "review-issue"
     assert pilot.state["failure"] == "missing"
+    assert actions[0]["background"].startswith("autopilot-task.py step watch-ci.py")
 
 
 def test_restart_starts_the_ci_wait_before_the_review_again(pilot):
@@ -1536,14 +1554,28 @@ def test_restart_starts_the_ci_wait_before_the_review_again(pilot):
 def test_green_ci_before_the_review_during_a_pause_waits(pilot):
     at_review_ci(pilot, paused=True)
     assert finish(pilot, out="green", code=0) == []
-    assert pilot.state["step"] == "review-issue"
+    assert not pilot.ran("gate", "review")
     assert pilot.state["waiting_for"] == "resume"
 
 
-def test_done_during_a_pause_skips_the_ci_wait(pilot):
-    at_step(pilot, "fix-review", paused=True)
-    assert finish(pilot, result()) == []
-    assert pilot.state["step"] == "review-issue"
+@pytest.mark.parametrize("held", [{"paused": True}, {"park": "manuell"}])
+def test_review_after_a_hold_waits_for_ci_first(pilot, held):
+    at_step(pilot, "fix-review", **held)
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, result())
+    entry = pilot.state["parked"][0] if "park" in held else pilot.state
+    assert entry["step"] == "review-issue"
+    if "paused" in held:
+        actions = message(pilot, "weiter")
+        assert actions[0]["background"].startswith("autopilot-task.py step watch-ci.py")
+
+
+def test_stop_during_the_ci_wait_parks_the_review(pilot):
+    at_review_ci(pilot)
+    pilot.result("autopilot-poll.py", "next", out="")
+    message(pilot, "stop #7")
+    pilot.event("stopped", "t1")
+    assert pilot.state["parked"][0]["step"] == "review-issue"
 
 
 def test_issue_without_a_pull_request_is_a_failure(pilot):
