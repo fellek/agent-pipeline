@@ -2,8 +2,9 @@
 """Status line command of the autopilot session.
 
 Reads the session JSON from stdin, prints the rate limit usage and sends a
-Telegram notice once per reset time when a window is exhausted. Runs on a
-timer, so it also fires while a request waits for a limit to reset.
+Telegram notice once per reset time when a window is exhausted; a failed notice
+is tried once more on the next run. Runs on a timer, so it also fires while a
+request waits for a limit to reset.
 """
 
 import datetime
@@ -46,11 +47,14 @@ def exhausted_windows(rate_limits):
 
 
 def notify(text):
-    subprocess.run(
-        [Path(__file__).parents[1] / "bin" / "telegram-send.py"],
-        input=text,
-        text=True,
-        check=True,
+    return (
+        subprocess.run(
+            [Path(__file__).parents[1] / "bin" / "telegram-send.py"],
+            input=text,
+            text=True,
+            check=False,
+        ).returncode
+        == 0
     )
 
 
@@ -70,9 +74,12 @@ def main():
     reported = {name: reset for name, reset in stored.items() if name in exhausted}
     state = read_json(PIPELINE / "state.json")
     for name, resets_at in exhausted.items():
-        if reported.get(name) != resets_at:
-            notify(notice(state, name, resets_at))
-            reported[name] = resets_at
+        retry = f"retry {resets_at}"
+        if reported.get(name) == resets_at:
+            continue
+        # Without Telegram the status line still runs; one retry, then it stays quiet.
+        sent = notify(notice(state, name, resets_at))
+        reported[name] = resets_at if sent or reported.get(name) == retry else retry
     if not reported:
         limit_file.unlink(missing_ok=True)
     elif reported != stored:

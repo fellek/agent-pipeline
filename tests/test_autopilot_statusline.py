@@ -132,12 +132,30 @@ def test_below_limit_sends_nothing_and_clears_limit_file(statusline, rate_limits
     assert not (statusline.pipeline / "limit.json").exists()
 
 
-def test_failed_send_is_retried(statusline, tmp_path):
+def test_failed_send_keeps_the_output_and_is_retried_once(statusline, tmp_path):
     limits = {"seven_day": window(100, WEEK_RESET)}
-    write_executable(tmp_path / "bin" / "curl", "exit 22")
-    with pytest.raises(subprocess.CalledProcessError):
-        statusline.run(limits)
-    assert not (statusline.pipeline / "limit.json").exists()
+    curl = tmp_path / "bin" / "curl"
+    write_executable(curl, f"echo x >> {tmp_path}/failed; cat > /dev/null; exit 22")
+
+    outputs = [statusline.run(limits) for _ in range(3)]
+
+    assert outputs == ["7d 100%\n"] * 3
+    assert (tmp_path / "failed").read_text().count("x") == 2
+    stored = json.loads((statusline.pipeline / "limit.json").read_text())
+    assert stored == {"seven_day": "2026-11-20 04:00"}
+
+
+def test_send_that_fails_once_reaches_telegram_on_the_next_run(statusline, tmp_path):
+    limits = {"seven_day": window(100, WEEK_RESET)}
+    curl = tmp_path / "bin" / "curl"
+    original = curl.read_text()
+    write_executable(curl, "cat > /dev/null; exit 22")
+    statusline.run(limits)
+    curl.write_text(original)
+
+    statusline.run(limits)
+
+    assert len(statusline.calls) == 1
 
 
 def test_prints_usage_of_both_windows(statusline):
