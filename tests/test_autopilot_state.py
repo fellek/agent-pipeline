@@ -1132,6 +1132,12 @@ def test_main_reads_the_event_text_from_the_file_and_deletes_it(
     ]
 
 
+def test_start_deletes_a_left_over_event_text(pilot, tmp_path):
+    (tmp_path / "event.txt").write_text("old")
+    pilot.event("start")
+    assert not (tmp_path / "event.txt").exists()
+
+
 def test_main_rejects_unknown_events(pilot):
     with pytest.raises(SystemExit):
         pilot.module.main(["event", "nope"])

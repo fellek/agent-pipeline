@@ -14,12 +14,12 @@ Events:
   done <task_id> [<tokens> <duration_ms>]
                          a fork or background task ended; a fork's result in
                          EVENT_TEXT, its usage from the task notification
+  stopped <task_id>      the task of a `stop` action was stopped
 
 EVENT_TEXT is .pipeline/event.txt, which the orchestrator writes with its Write
 tool and this deletes after reading. Text on stdin would need a heredoc, and a
 redirect keeps the whole Bash call in the sandbox, where `gh` cannot reach the
 gate.
-  stopped <task_id>      the task of a `stop` action was stopped
 
 Actions, one JSON object per line:
   {"skill": <name>, "args": <args>}   run the skill via the Skill tool, then `started`
@@ -426,6 +426,8 @@ class Autopilot:
     def on_start(self, label):
         # Tasks end with the session; after a reboot the pid may be another process.
         (PIPELINE / "tasks" / "poller.pid").unlink(missing_ok=True)
+        # A text left by a failed call: the Write tool overwrites only a file it has read.
+        (PIPELINE / EVENT_TEXT).unlink(missing_ok=True)
         self.s["poller"] = None
         self.s["retry"] = None
         self.run("release-changed.sh", "record")
