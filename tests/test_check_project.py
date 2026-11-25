@@ -23,6 +23,8 @@ def app(tmp_path):
     shutil.copy(TEMPLATES / "claude" / "settings.json", tmp_path / ".claude")
     shutil.copy(TEMPLATES / "CLAUDE.md", tmp_path)
     shutil.copytree(TEMPLATES / "claude" / "rules", tmp_path / ".claude" / "rules")
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "ci.yml").write_text("name: CI\non: push\n")
     return tmp_path
 
 
@@ -45,7 +47,9 @@ def write_deny(app, rules):
 
 def write_checks(app, commands, allow=()):
     (app / ".claude" / "rules" / "project.md").write_text(
-        "## Checks\n\n<!-- note -->\n\n```\n" + "\n".join(commands) + "\n```\n"
+        "## Checks\n\n<!-- note -->\n\n```\n"
+        + "\n".join(commands)
+        + "\n```\n\nRequired workflows: CI\n"
     )
     write_permissions(app, allow=list(allow))
 
@@ -278,6 +282,7 @@ def test_fails_for_check_command_that_a_deny_rule_matches(app):
 def test_reads_only_the_checks_block(app):
     (app / ".claude" / "rules" / "project.md").write_text(
         "## Build\n\n```\nmake build\n```\n\n## Checks\n\n```\nnpm test\n```\n"
+        "\nRequired workflows: CI\n"
         "\n## Other\n\n```\nmake other\n```\n"
     )
 
@@ -353,3 +358,28 @@ def test_template_runs_the_pipeline_commands_outside_the_sandbox():
     assert set(allow) <= set(excluded)
     # gh goes through sudo to the gate, which fails inside the sandbox.
     assert "gh *" in excluded
+
+
+@pytest.mark.parametrize(
+    ("line", "problem"),
+    [
+        ("", ".claude/rules/project.md lacks a line Required workflows: <name>, ..."),
+        (
+            "Required workflows: CI, Integration",
+            ".claude/rules/project.md requires the workflow Integration, which "
+            + ".github/workflows lacks",
+        ),
+    ],
+)
+def test_checks_the_required_workflows(app, line, problem):
+    (app / ".claude" / "rules" / "project.md").write_text(
+        "## Checks\n\n```\n.claude/skills/pipeline/bin/check-project.py\n```\n\n"
+        + line
+        + "\n"
+    )
+    assert check(app).stderr.strip() == problem
+
+
+def test_accepts_quoted_workflow_names(app):
+    (app / ".github" / "workflows" / "ci.yml").write_text("name: 'CI'\n")
+    assert check(app).returncode == 0
