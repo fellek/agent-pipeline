@@ -12,6 +12,8 @@ Also fails for each command in the first code block under "## Checks" in
 .claude/rules/project.md that a Bash deny rule matches or no Bash allow rule
 does, since the autopilot would wait for an approval. Rules match as in Claude
 Code: each subcommand of a compound command on its own, "*" stands for any text.
+With checks, the section also needs a line "Required workflows: <name>, ..." whose
+names are workflows in .github/workflows, the CI runs the autopilot waits for.
 
 Usage:
   check-project.py
@@ -30,6 +32,7 @@ SETTINGS = Path(".claude/settings.json")
 CLAUDE_MDS = (Path("CLAUDE.md"), Path(".claude/CLAUDE.md"))
 RULES = ".claude/skills/pipeline/rules/workflow.md"
 PROJECT_RULES = Path(".claude/rules/project.md")
+WORKFLOWS = Path(".github/workflows")
 # Quoted text is matched first so that separators in it are skipped; an & next to
 # < or > is part of a redirection such as 2>&1 or &>.
 SEPARATOR = re.compile(
@@ -138,6 +141,30 @@ def check_command_problems(settings):
     return problems
 
 
+def workflow_problems():
+    if not check_commands():
+        return []
+    section = re.search(
+        r"^## Checks[ \t]*\n(.*?)(?=^## |\Z)",
+        PROJECT_RULES.read_text(),
+        re.MULTILINE | re.DOTALL,
+    )
+    match = re.search(r"^Required workflows:(.*)$", section.group(1), re.MULTILINE)
+    names = [n.strip() for n in match.group(1).split(",") if n.strip()] if match else []
+    if not names:
+        return [f"{PROJECT_RULES} lacks a line Required workflows: <name>, ..."]
+    known = {
+        found.group(1).strip().strip("'\"")
+        for path in [*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")]
+        if (found := re.search(r"^name:(.*)$", path.read_text(), re.MULTILINE))
+    }
+    return [
+        f"{PROJECT_RULES} requires the workflow {name}, which {WORKFLOWS} lacks"
+        for name in names
+        if name not in known
+    ]
+
+
 def normalized(path):
     # normpath, not resolve: the release worktree may be a symlink or missing.
     return os.path.normpath(os.path.abspath(path))
@@ -170,7 +197,7 @@ def main(argv):
         problems = [problem]
     else:
         problems = settings_problems(settings) + check_command_problems(settings)
-    problems += claude_md_problems()
+    problems += claude_md_problems() + workflow_problems()
     if problems:
         sys.exit("\n".join(problems))
 
