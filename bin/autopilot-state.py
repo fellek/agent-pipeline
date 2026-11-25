@@ -904,7 +904,7 @@ class Autopilot:
         self.s["head"] = self.head_sha()
         branch, pr, sha = self.s["branch"], self.s["pr"], self.s["head"]
         self.background(
-            f"step sh -c 'watch-ci.py {branch} {sha} && agent-review.py sync {pr} {sha}'"
+            f"step sh -c 'watch-ci.py {branch} {sha} && agent-review.py await {pr} {sha}'"
         )
         self.s["waiting_for"] = "ci"
         self.s["pending"] = "step"

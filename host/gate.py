@@ -52,7 +52,7 @@ TRUSTED = trust.TRUSTED
 GH_COMMANDS = {
     "issue": {"view", "list", "comment", "create", "edit", "close", "reopen"},
     "pr": {"view", "list", "create", "diff", "comment", "edit", "close"},
-    "run": {"list", "view", "watch", "rerun"},
+    "run": {"list", "view", "watch"},
     "release": {"view", "list"},
     "label": {"list", "create"},
 }

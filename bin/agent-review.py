@@ -16,6 +16,10 @@ overall deadline of 45 minutes, `timeout`; exits 1
 unless the run ends in line with the verdict, so a red run after a review without
 an approve is no failure.
 
+`await` is `sync` without the re-run, for the orchestrator, whose token may only
+read Actions: on a mismatch it waits up to 10 minutes for the new attempt that
+agent-review-sync.yml starts.
+
 `audit` checks a commit pushed to the default branch: it must be the merge of a
 pull request whose head has an attested approve and passed runs. Otherwise it
 opens a followup issue and exits 1. Without the key it only warns.
@@ -23,6 +27,7 @@ opens a followup issue and exits 1. Without the key it only warns.
 Usage:
   agent-review.py <pr> <head_sha>
   agent-review.py sync <pr> <head_sha>
+  agent-review.py await <pr> <head_sha>
   agent-review.py audit <sha>
 """
 
@@ -38,6 +43,8 @@ APPROVE = "Verdict: approve"
 WORKFLOW = "agent-review.yml"
 ATTEMPTS = 10
 INTERVAL_SECONDS = 3
+AWAIT_ATTEMPTS = 20
+AWAIT_INTERVAL_SECONDS = 30
 DEADLINE_SECONDS = 45 * 60
 
 
@@ -129,18 +136,24 @@ def rerun(run):
         text=True,
         check=False,
     )
-    # Until the new attempt shows up, `gh run watch` reports the old result.
-    for attempt in range(ATTEMPTS):
-        if attempt:
-            time.sleep(INTERVAL_SECONDS)
-        current = gh_json("run", "view", str(run["databaseId"]), "--json", "attempt")
-        if current["attempt"] > run["attempt"]:
-            return True
+    if new_attempt(run, ATTEMPTS, INTERVAL_SECONDS):
+        return True
     sys.stderr.write(started.stderr)
     return False
 
 
-def sync(pr, head_sha):
+def new_attempt(run, attempts, interval):
+    # Until the new attempt shows up, `gh run watch` reports the old result.
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(interval)
+        current = gh_json("run", "view", str(run["databaseId"]), "--json", "attempt")
+        if current["attempt"] > run["attempt"]:
+            return True
+    return False
+
+
+def sync(pr, head_sha, may_rerun=True):
     deadline = time.monotonic() + DEADLINE_SECONDS
     run = latest_run(head_sha)
     if run is None:
@@ -149,7 +162,11 @@ def sync(pr, head_sha):
         green = wait(run, deadline)
         approve = approved(reviews(pr), pr, head_sha, review_key())
         if green != approve:
-            green = rerun(run) and wait(run, deadline)
+            if may_rerun:
+                started = rerun(run)
+            else:
+                started = new_attempt(run, AWAIT_ATTEMPTS, AWAIT_INTERVAL_SECONDS)
+            green = started and wait(run, deadline)
     except subprocess.TimeoutExpired:
         return "timeout", False
     return ("green" if green else f"red {run['url']}"), green == approve
@@ -213,14 +230,14 @@ def audit(sha):
 
 def main(argv):
     match argv:
-        case ["sync", pr, head_sha]:
-            result, in_line = sync(pr, head_sha)
+        case ["sync" | "await" as command, pr, head_sha]:
+            result, in_line = sync(pr, head_sha, may_rerun=command == "sync")
             print(result)
             if not in_line:
                 sys.exit(1)
         case ["audit", sha]:
             audit(sha)
-        case [pr, head_sha] if pr not in ("sync", "audit"):
+        case [pr, head_sha] if pr not in ("sync", "await", "audit"):
             if not approved(reviews(pr), pr, head_sha, review_key()):
                 sys.exit(f"No approve of the gate for {head_sha}")
         case _:
