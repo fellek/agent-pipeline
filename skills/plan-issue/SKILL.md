@@ -10,6 +10,8 @@ effort: high
 
 Plan the implementation of issue #$0. Do not change any files.
 
+The pipeline rules are `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`; read the file only if the project's `CLAUDE.md` import has not already loaded it into your context.
+
 Maintainer answer to an earlier open question (empty if none): $1
 
 Failure summary of the previous attempt (empty if none): $2
@@ -22,5 +24,5 @@ If set, check that cause first and do not repeat the same approach.
    - affected files
    - tests to add or change
    - for architecture decisions: 2 to 3 options with pros and cons and a recommendation
-   - open questions, handled as described in `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md` under "Autopilot operation"
-4. End with the result block from `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`: `needs_input` if a question for the maintainer remains, otherwise `done`.
+   - open questions, handled as described in the pipeline rules under "Autopilot steps"
+4. End with the result block of the pipeline rules: `needs_input` if a question for the maintainer remains, otherwise `done`.

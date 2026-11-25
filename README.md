@@ -15,7 +15,7 @@ git clone https://github.com/fellek/agent-pipeline ~/agent-pipeline
 
 ## Docs
 
-- Rules for the agents: [rules/workflow.md](rules/workflow.md)
+- Rules for the agents: [rules/workflow.md](rules/workflow.md), for the orchestrator: [rules/orchestrator.md](rules/orchestrator.md)
 - Install on a Linux host: [INSTALL.md](INSTALL.md)
 - Project setup, operation and troubleshooting: [docs/autopilot.md](docs/autopilot.md)
 - Templates for a new project: [templates/](templates)

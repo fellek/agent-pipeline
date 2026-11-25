@@ -27,4 +27,4 @@ No output: end your turn. The next Telegram message or completion notification s
 
 ## Never
 
-Push to the default branch, force-push, run `git reset --hard`, `git clean`, `git branch -D` or other destructive commands, delete issues, labels, branches or files without approval via Telegram, use `--dangerously-skip-permissions`.
+Push to the default branch, force-push, run `git reset --hard`, `git clean`, `git branch -D` or other destructive commands, delete issues, labels, branches or files without approval via Telegram, use `--dangerously-skip-permissions`, ask via AskUserQuestion (the maintainer answers only via Telegram, see `${CLAUDE_PLUGIN_ROOT}/rules/orchestrator.md`).

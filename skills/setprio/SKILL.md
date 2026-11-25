@@ -10,6 +10,8 @@ effort: medium
 
 Check issue #$0 before the pipeline selects it. Do not change any files.
 
+The pipeline rules are `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`; read the file only if the project's `CLAUDE.md` import has not already loaded it into your context.
+
 Maintainer answer to an earlier open question (empty if none): $1
 
 Failure summary of the previous attempt (empty if none): $2
@@ -22,7 +24,7 @@ If set, check that cause first and do not repeat the same approach; do not post 
 5. Search the answer to every question first, in closed and open issues and pull requests (`gh issue list --state all --search <terms>`, `gh pr list --state all --search <terms>`), `docs/decisions/`, `docs/` and `CLAUDE.md`. Ask only what remains open.
 6. Post one brief issue comment, for example `setprio: Verbesserung, macht das Projekt einfacher. Definition of Ready erfüllt: ready.`
 7. Add the label `bug` for a bug or `enhancement` for an improvement. Set no status label; the orchestrator does.
-8. End with the result block from `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`:
+8. End with the result block of the pipeline rules:
    - `done` if it is a bug or an improvement that makes the project better and the Definition of Ready is met.
    - `needs_input` if it is an exception to a rule or makes the project more complicated: `OPEN_QUESTIONS` holds the reasoning and a proposal how to simplify or generalize the rule.
    - `needs_input` if the Definition of Ready is not met: `OPEN_QUESTIONS` holds the numbered questions.

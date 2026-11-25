@@ -62,5 +62,21 @@ def test_step_skill_names_workflow_rules_of_plugin(path):
 
 def test_workflow_rules_hold_what_skills_refer_to():
     text = (ROOT / WORKFLOW.removeprefix("${CLAUDE_PLUGIN_ROOT}/")).read_text()
-    assert "## Autopilot operation" in text
+    assert "## Autopilot steps" in text
     assert "STATUS: done | blocked | needs_input" in text
+
+
+def test_orchestrator_rules_stay_out_of_the_fork_rules():
+    # Forks load workflow.md through the CLAUDE.md import; limits and Telegram are
+    # the orchestrator's.
+    rules = ROOT / "rules"
+    workflow = (rules / "workflow.md").read_text()
+    orchestrator = (rules / "orchestrator.md").read_text()
+    for rule in ("At most 3 attempts", "At most 5 review rounds", "Budget", "`#<n>`"):
+        assert rule in orchestrator
+        assert rule not in workflow
+
+
+@pytest.mark.parametrize("path", STEP_SKILLS, ids=skill_id)
+def test_step_skill_reads_the_rules_only_without_the_import(path):
+    assert "read the file only if the project's `CLAUDE.md` import" in path.read_text()
