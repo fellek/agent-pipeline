@@ -156,6 +156,20 @@ def test_send_that_fails_once_reaches_telegram_on_the_next_run(statusline, tmp_p
     statusline.run(limits)
 
     assert len(statusline.calls) == 1
+    stored = json.loads((statusline.pipeline / "limit.json").read_text())
+    assert stored == {"seven_day": "2026-11-20 04:00"}
+
+
+def test_new_reset_after_a_failed_send_gets_its_own_notice(statusline, tmp_path):
+    curl = tmp_path / "bin" / "curl"
+    original = curl.read_text()
+    write_executable(curl, "cat > /dev/null; exit 22")
+    statusline.run({"seven_day": window(100, WEEK_RESET)})
+    curl.write_text(original)
+
+    statusline.run({"seven_day": window(100, NEXT_WEEK_RESET)})
+
+    assert "2026-11-27 04:00" in statusline.calls[0]
 
 
 def test_prints_usage_of_both_windows(statusline):

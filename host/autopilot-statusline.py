@@ -74,9 +74,9 @@ def main():
     reported = {name: reset for name, reset in stored.items() if name in exhausted}
     state = read_json(PIPELINE / "state.json")
     for name, resets_at in exhausted.items():
-        retry = f"retry {resets_at}"
         if reported.get(name) == resets_at:
             continue
+        retry = f"retry {resets_at}"
         # Without Telegram the status line still runs; one retry, then it stays quiet.
         sent = notify(notice(state, name, resets_at))
         reported[name] = resets_at if sent or reported.get(name) == retry else retry
