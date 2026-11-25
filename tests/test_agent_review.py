@@ -123,9 +123,9 @@ def commands(calls):
     return [args[1:3] for args in calls]
 
 
-def run_sync(gate, capsys):
+def run_sync(gate, capsys, command="sync"):
     try:
-        gate.main(["sync", "49", HEAD])
+        gate.main([command, "49", HEAD])
         code = 0
     except SystemExit as exit_info:
         code = exit_info.code
@@ -390,21 +390,12 @@ def test_sync_prints_timeout_after_the_deadline(monkeypatch, capsys, sync_gate):
     assert run_sync(sync_gate, capsys) == (1, "timeout\n")
 
 
-def run_await(gate, capsys):
-    try:
-        gate.main(["await", "49", HEAD])
-        code = 0
-    except SystemExit as exit_info:
-        code = exit_info.code
-    return code, capsys.readouterr().out
-
-
 def test_await_waits_for_the_rerun_of_the_workflow(monkeypatch, capsys, sync_gate):
     calls = fake_sync_gh(
         monkeypatch, [APPROVE], [RUN], watch_exits=[1, 0], attempts=[1, 1, 2]
     )
 
-    assert run_await(sync_gate, capsys) == (0, "green\n")
+    assert run_sync(sync_gate, capsys, "await") == (0, "green\n")
     assert ["run", "rerun"] not in commands(calls)
     assert commands(calls)[-4:] == [["run", "view"]] * 3 + [["run", "watch"]]
 
@@ -418,7 +409,7 @@ def test_await_fails_when_the_workflow_never_reruns(monkeypatch, capsys, sync_ga
         attempts=[1] * sync_gate.AWAIT_ATTEMPTS,
     )
 
-    assert run_await(sync_gate, capsys) == (1, f"red {RUN['url']}\n")
+    assert run_sync(sync_gate, capsys, "await") == (1, f"red {RUN['url']}\n")
     assert ["run", "rerun"] not in commands(calls)
     assert commands(calls).count(["run", "view"]) == sync_gate.AWAIT_ATTEMPTS
 
@@ -426,5 +417,5 @@ def test_await_fails_when_the_workflow_never_reruns(monkeypatch, capsys, sync_ga
 def test_await_passes_a_run_in_line_with_the_verdict(monkeypatch, capsys, sync_gate):
     calls = fake_sync_gh(monkeypatch, [APPROVE], [RUN], watch_exits=[0])
 
-    assert run_await(sync_gate, capsys) == (0, "green\n")
+    assert run_sync(sync_gate, capsys, "await") == (0, "green\n")
     assert ["run", "view"] not in commands(calls)

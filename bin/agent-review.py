@@ -6,7 +6,7 @@ valid attestation of the gate count (see attestation.py). Without it, the latest
 review whose first line is `Verdict: approve` counts, with a warning, until the
 secret is set.
 
-Without `sync` or `audit` it fails unless the review is an approve; the
+Without `sync`, `await` or `audit` it fails unless the review is an approve; the
 `agent-review` check runs this.
 
 `sync` brings the latest `agent-review` run of the `pull_request` event on the head
@@ -128,8 +128,8 @@ def wait(run, deadline):
 
 
 def rerun(run):
-    """Start a new attempt, or join one that is already running, e.g. from the
-    other sync. Tell whether a new attempt started."""
+    """Start a new attempt, or join one that is already running, e.g. from a
+    sync of an earlier review. Tell whether a new attempt started."""
     started = subprocess.run(
         ["gh", "run", "rerun", str(run["databaseId"])],
         capture_output=True,
