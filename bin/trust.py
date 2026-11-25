@@ -11,6 +11,9 @@ STATUS_LABELS = {"ready", "in-progress", "in-review", "approved", "question", "p
 # Set by the autopilot while it works on an issue; `ready` it sets only on the
 # issues of the team, so on a stranger's issue it comes from a person.
 WORK_LABELS = STATUS_LABELS - {"ready"}
+# The gate appends it to every comment of the pipeline, which posts with the
+# maintainer's account, so a poll can tell the maintainer's own comments apart.
+MARKER = "<!-- pipeline -->"
 EDITED_QUERY = (
     "query($owner: String!, $repo: String!, $n: Int!)"
     " { repository(owner: $owner, name: $repo) { issue(number: $n) { lastEditedAt } } }"
