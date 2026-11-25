@@ -26,7 +26,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
 4. Im Repository unter Settings, Secrets and variables, Actions das Secret `PIPELINE_REVIEW_KEY` mit dem Inhalt von `/etc/pipeline-gate/projects/<benutzer>/review-key` anlegen. Ohne Secret zählt `agent-review` ein Review nach seinem Text, mit Warnung.
 5. Der Projekt-Benutzer darf keinen eigenen Token haben (kein `~/.config/gh/hosts.yml`, kein `GH_TOKEN`); `autopilot-start.sh` bricht sonst ab.
 
-Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2 an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates und der Autopilot meldet den Poller als fehlgeschlagen.
+Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2 an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates: der Autopilot pausiert mit dem Fehler, im Leerlauf nach drei gescheiterten Abfragen des Pollers.
 
 Nach einem Release, das `host/gate.py`, `host/gate-review.md`, `bin/attestation.py` oder `rules/workflow.md` ändert, `install-gate.sh` erneut ausführen (leere Eingabe behält den Token); `autopilot-start.sh` warnt, solange das installierte Gate abweicht.
 

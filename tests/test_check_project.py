@@ -393,11 +393,18 @@ DENIED_READS = json.loads((TEMPLATES / "claude" / "settings.json").read_text())[
 
 def test_template_keeps_the_credentials_from_sandboxed_commands():
     settings = json.loads((TEMPLATES / "claude" / "settings.json").read_text())
-    assert {"~/.config/gh", "~/.ssh", "~/.claude/.credentials.json"} <= set(
-        DENIED_READS
-    )
-    deny = settings["permissions"]["deny"]
-    assert {"Read(~/.config/gh/**)", "Read(~/.ssh/**)", "Bash(gh auth*)"} <= set(deny)
+    assert set(DENIED_READS) == {
+        "~/.config/gh",
+        "~/.ssh",
+        "~/.claude/.credentials.json",
+        "~/.claude/channels",
+    }
+    assert {
+        "Read(~/.config/gh/**)",
+        "Read(~/.ssh/**)",
+        "Read(~/.claude/.credentials.json)",
+        "Bash(gh auth*)",
+    } <= set(settings["permissions"]["deny"])
 
 
 @pytest.mark.parametrize("path", DENIED_READS)

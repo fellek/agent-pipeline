@@ -3,8 +3,8 @@
 
 Fails if .claude/settings.json lacks a deny rule, the SessionStart hook (it warns
 about a missing or stale release), a switch of the Bash sandbox or a path the
-sandbox may not read (the credentials) of the pipeline's settings template, or if neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's
-workflow rules: an @ line whose path, relative to the file it is in, points to
+sandbox may not read (the credentials) of the pipeline's settings template, or if
+neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's workflow rules: an @ line whose path, relative to the file it is in, points to
 .claude/skills/pipeline/rules/workflow.md of the project. Only the path counts,
 not whether the file exists, so the check passes without the release checked out.
 
