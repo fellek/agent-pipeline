@@ -395,10 +395,54 @@ def api_problem(args, repo):
     return f"gh api {method} {path} is not allowed through the gate"
 
 
+COMMENT_PATHS = re.compile(r"repos/[^/]+/[^/]+/issues/(\d+/comments|comments/\d+)")
+
+
+def marked(text):
+    return f"{text}\n\n{trust.MARKER}"
+
+
+def mark_comment(args, stdin):
+    """The arguments and stdin of `gh <args>` with the marker in a comment body."""
+    args = list(args)
+    if args[:2] in (["issue", "comment"], ["pr", "comment"]):
+        for i, arg in enumerate(args):
+            name, eq, value = arg.partition("=")
+            if name not in ("-b", "--body", "-F", "--body-file"):
+                continue
+            if name in ("-F", "--body-file"):
+                return args, marked(stdin())
+            if eq:
+                args[i] = f"{name}={marked(value)}"
+            else:
+                args[i + 1] = marked(args[i + 1])
+        return args, None
+    if args[:1] == ["api"] and any(
+        COMMENT_PATHS.fullmatch(a.lstrip("/")) for a in args
+    ):
+        for i, arg in enumerate(args):
+            if arg == "--input":
+                body = json.loads(stdin())
+                return args, json.dumps({**body, "body": marked(body["body"])})
+            if arg in ("-f", "-F", "--field", "--raw-field") and args[i + 1].startswith(
+                "body="
+            ):
+                args[i + 1] = marked(args[i + 1])
+    return args, None
+
+
 def run_gh(project, args):
     if problem := gh_problem(args, project.repo):
         raise Refused(problem)
-    os.execvpe("gh", ["gh", *args], {**os.environ, **project.env()})
+    args, stdin = mark_comment(args, sys.stdin.read)
+    env = {**os.environ, **project.env()}
+    if stdin is None:
+        os.execvpe("gh", ["gh", *args], env)
+    else:
+        done = subprocess.run(
+            ["gh", *args], input=stdin, text=True, env=env, check=False
+        )
+        sys.exit(done.returncode)
 
 
 # review and merge

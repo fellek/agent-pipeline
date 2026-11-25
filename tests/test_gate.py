@@ -680,3 +680,76 @@ def test_stranger_issue_edited_after_label_is_not_reviewed(gate, project, monkey
 def test_labeled_stranger_issue_is_reviewed(gate, project, monkeypatch):
     fake_issue(gate, monkeypatch, "NONE", [LABELED])
     assert gate.issue_text(project, 4)["body"] == "b"
+
+
+# The marker of the pipeline's comments
+
+MARK = "\n\n<!-- pipeline -->"
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            ["issue", "comment", "5", "--body", "x"],
+            ["issue", "comment", "5", "--body", "x" + MARK],
+        ),
+        (["pr", "comment", "5", "-b", "x"], ["pr", "comment", "5", "-b", "x" + MARK]),
+        (
+            ["issue", "comment", "5", "--body=x"],
+            ["issue", "comment", "5", "--body=x" + MARK],
+        ),
+        (
+            ["api", "repos/{owner}/{repo}/issues/5/comments", "-f", "body=x"],
+            ["api", "repos/{owner}/{repo}/issues/5/comments", "-f", "body=x" + MARK],
+        ),
+        (
+            ["api", "-X", "PATCH", "repos/o/app/issues/comments/9", "-f", "body=x"],
+            [
+                "api",
+                "-X",
+                "PATCH",
+                "repos/o/app/issues/comments/9",
+                "-f",
+                "body=x" + MARK,
+            ],
+        ),
+        (["issue", "view", "5"], ["issue", "view", "5"]),
+        (
+            ["api", "repos/o/app/issues/5", "-f", "body=x"],
+            ["api", "repos/o/app/issues/5", "-f", "body=x"],
+        ),
+    ],
+)
+def test_comments_get_the_marker(gate, args, expected):
+    assert gate.mark_comment(args, lambda: pytest.fail("read stdin")) == (
+        expected,
+        None,
+    )
+
+
+def test_comment_from_stdin_gets_the_marker(gate):
+    args = ["issue", "comment", "5", "--body-file", "-"]
+    assert gate.mark_comment(args, lambda: "x") == (args, "x" + MARK)
+
+
+def test_api_input_gets_the_marker(gate):
+    args = ["api", "repos/o/app/issues/5/comments", "--input", "-"]
+    _, stdin = gate.mark_comment(args, lambda: '{"body": "x"}')
+    assert json.loads(stdin) == {"body": "x" + MARK}
+
+
+def test_marked_comment_runs_with_stdin(gate, project, monkeypatch):
+    calls = []
+    monkeypatch.setattr(gate.sys, "stdin", type("S", (), {"read": lambda self: "x"})())
+    monkeypatch.setattr(
+        gate.subprocess,
+        "run",
+        lambda args, **kwargs: (
+            calls.append((args, kwargs)) or subprocess.CompletedProcess(args, 0)
+        ),
+    )
+    with pytest.raises(SystemExit) as code:
+        gate.run_gh(project, ["issue", "comment", "5", "--body-file", "-"])
+    assert code.value.code == 0
+    assert calls[0][1]["input"] == "x" + MARK

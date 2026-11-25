@@ -11,16 +11,20 @@ SINCE = "2026-11-13T10:00:00Z"
 def poll(monkeypatch):
     module = load_script("autopilot-poll.py")
     monkeypatch.setattr(module, "dependencies", lambda number, relation: [])
+    monkeypatch.setattr(module, "maintainer", lambda: "maintainer")
     return module
 
 
-def comment(number=48, created_at="2026-11-13T10:00:01Z", association="OWNER"):
+def comment(
+    number=48, created_at="2026-11-13T10:00:01Z", login="maintainer", body="ja"
+):
     return {
         "issue_url": f"https://api.github.com/repos/o/r/issues/{number}",
         "html_url": f"https://github.com/o/r/issues/{number}#issuecomment-1",
         "created_at": created_at,
-        "author_association": association,
-        "body": "ja",
+        "author_association": "MEMBER",
+        "user": {"login": login},
+        "body": body,
     }
 
 
@@ -68,10 +72,17 @@ def test_owner_comment_after_cursor_is_printed(monkeypatch, capsys, poll):
     [
         comment(created_at="2026-11-13T09:59:59Z"),
         comment(created_at=SINCE),
-        comment(association="CONTRIBUTOR"),
+        comment(login="someone"),
+        comment(body="Antwort gefunden: x\n\n<!-- pipeline -->"),
         comment(number=47),
     ],
-    ids=["before_cursor", "on_cursor", "not_owner", "other_issue"],
+    ids=[
+        "before_cursor",
+        "on_cursor",
+        "not_maintainer",
+        "of_the_pipeline",
+        "other_issue",
+    ],
 )
 def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     fake_gh(monkeypatch, poll, [ignored], [comment(number=55)])
@@ -308,7 +319,7 @@ def test_answers_use_cursor_per_issue_in_one_fetch(monkeypatch, capsys, poll):
     comments = [
         comment(number=48, created_at="2026-11-13T10:30:00Z"),
         comment(number=55, created_at="2026-11-13T10:30:00Z"),
-        comment(number=55, created_at="2026-11-13T11:00:01Z", association="NONE"),
+        comment(number=55, created_at="2026-11-13T11:00:01Z", login="someone"),
         comment(number=55, created_at="2026-11-13T11:00:02Z"),
     ]
     calls = fake_gh(monkeypatch, poll, comments)
