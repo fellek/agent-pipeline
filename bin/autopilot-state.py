@@ -79,6 +79,8 @@ ISSUE_FIELDS = {
     "park": None,
     "head": None,
     "merge": None,
+    # The event to repeat on `weiter` after a failed command.
+    "retry": None,
 }
 DEFAULT = {
     "chat_id": None,
@@ -90,7 +92,6 @@ DEFAULT = {
     "poller": None,
     "poll_failures": 0,
     "pending": None,
-    "retry": None,
 }
 # Fields a parked entry keeps of the state.
 PARKED_FIELDS = (
@@ -346,7 +347,9 @@ class Autopilot:
             waiting = self.s["waiting_for"]
             # The task of this event has ended and sends nothing more: keep the event.
             if waiting in RUNNING and (
-                event == "start" or event == "done" and args[0] == self.s["task_id"]
+                event == "start"
+                or event in ("done", "stopped")
+                and args[0] == self.s["task_id"]
             ):
                 self.s["retry"] = {
                     "event": event,
@@ -1182,7 +1185,9 @@ class Autopilot:
             self.reset(keep_paused=True)
             self.s["pr"] = lookup["pr"]
             self.s["review_rounds"] = lookup["review_rounds"]
-        self.s.update(issue=n, branch=branch, step=task, attempts=0, failure=None)
+        self.s.update(
+            issue=n, branch=branch, step=task, attempts=0, failure=None, retry=None
+        )
         self.s.update(paused=False, waiting_for=None)
         self.log(f"{task} manual start")
         self.loop()

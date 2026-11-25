@@ -1328,3 +1328,26 @@ def test_stopped_task_that_already_ended_is_ignored(pilot):
     finish(pilot, text=result())
     assert pilot.state["parked"][0]["reason"] == "abgebrochen"
     assert pilot.event("stopped", "t1") == []
+
+
+def test_failed_command_while_parking_a_stopped_task_is_repeated(pilot):
+    at_step(pilot, "issue")
+    message(pilot, "stop #7")
+    pilot.result("autopilot-poll.py", "now", code=1, err="api down")
+    assert pilot.event("stopped", "t1") == []
+    assert pilot.state["waiting_for"] == "resume"
+    pilot.result("autopilot-poll.py", "now", out="2026-01-01T00:00:00Z")
+    pilot.result("autopilot-poll.py", "next", out="")
+    message(pilot, "weiter")
+    assert pilot.state["parked"][0]["reason"] == "abgebrochen"
+
+
+@pytest.mark.parametrize("command", ["park #7", "/issue 7"])
+def test_retry_ends_when_the_issue_leaves_the_error_pause(pilot, command):
+    at_step(pilot, "issue")
+    pilot.result("gh", "pr", "list", code=1, err="api down")
+    finish(pilot, text=result())
+    assert pilot.state["retry"]
+    pilot.result("autopilot-poll.py", "next", out="")
+    message(pilot, command)
+    assert pilot.state["retry"] is None
