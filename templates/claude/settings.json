@@ -63,7 +63,11 @@
       "Bash(claude *--dangerously-skip-permissions*)",
       "Read(./.env)",
       "Read(./.env.*)",
-      "Read(~/.claude/channels/**/.env)"
+      "Read(~/.claude/channels/**/.env)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.claude/.credentials.json)",
+      "Bash(gh auth*)"
     ]
   },
   "sandbox": {
@@ -112,6 +116,14 @@
       "allowedDomains": [
         "github.com",
         "api.github.com"
+      ]
+    },
+    "filesystem": {
+      "denyRead": [
+        "~/.config/gh",
+        "~/.ssh",
+        "~/.claude/.credentials.json",
+        "~/.claude/channels"
       ]
     }
   },
