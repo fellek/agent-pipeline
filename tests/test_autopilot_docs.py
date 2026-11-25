@@ -13,6 +13,7 @@ COMMANDS = [
     "stop #<n>",
     "/verbose",
     "label <name>",
+    "update",
     "#<n> <text>",
     "/<task> <n>",
     "plan-issue",
