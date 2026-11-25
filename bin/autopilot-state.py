@@ -1196,7 +1196,10 @@ class Autopilot:
         ):
             self.reply("Autopilot braucht einen Neustart")
         if match is None:
-            self.reply(f"Bitte mit #{self.s['issue'] or '<n>'} antworten")
+            self.reply(
+                "Unbekannter Befehl, help listet alle. Antwort auf eine Rückfrage: "
+                f"#{self.s['issue'] or '<n>'} <text>"
+            )
         if match["answer"]:
             self.answer(int(match["answer"]), match["text"].strip())
         simple = match["simple"]
