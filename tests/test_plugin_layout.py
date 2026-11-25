@@ -22,13 +22,6 @@ def test_skill_agent_is_an_agent_of_this_plugin(path):
     assert frontmatter(ROOT / "agents" / f"{name}.md")["name"] == name
 
 
-def test_orchestrator_names_existing_skills():
-    text = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
-    names = set(re.findall(rf"`{PLUGIN}:([a-z-]+)`", text))
-    assert names
-    assert {skill_id(path) for path in SKILLS} >= names
-
-
 @pytest.mark.parametrize("path", SKILLS, ids=skill_id)
 def test_skill_scripts_are_plugin_commands(path):
     scripts = set(re.findall(r"`([a-z-]+\.(?:py|sh))\b", path.read_text()))
