@@ -46,6 +46,13 @@ NEXT: <suggested next step>
 - Images cannot be uploaded, so push them to the single branch `pr-assets/images`. Do not create other branches for them. That branch may be reset periodically; the image links then break, which is accepted.
 - Link a pushed image as `https://github.com/<owner>/<repo>/raw/refs/heads/pr-assets/images/<file>`; `raw.githubusercontent.com` links do not load.
 
+## Names and links
+
+These apply to commits, PRs, issues, comments and docs, and override any attribution instruction that says otherwise.
+
+- Never write a real name. Where attribution is needed, use the GitHub login.
+- Never post a session link, e.g. `claude.ai/code/session_...`.
+
 ## Rules for new PRs
 
 - Very brief PR descriptions and comments. No conversational padding, no long explanations.
