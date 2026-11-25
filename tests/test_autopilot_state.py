@@ -530,6 +530,7 @@ def test_approve_starts_the_ci_wait(pilot):
 def test_merged_default_branch_pushes_and_reviews_again(pilot):
     at_step(pilot, "review-issue")
     pilot.result("merge-default-branch.py", out="merged")
+    pilot.result("gate", "carry", code=1, err="changed files")
     actions = finish(pilot, out=result(verdict="approve"))
     assert pilot.ran("git", "push", "origin", "issue-7-fix-the-thing")
     assert actions[0]["background"].startswith("autopilot-task.py step gate review")
@@ -1550,3 +1551,62 @@ def test_issue_without_a_pull_request_is_a_failure(pilot):
     pilot.result("gh", "pr", "list", out="")
     finish(pilot, result())
     assert pilot.state["failure"] == "Kein Pull Request zum Branch"
+
+
+# Merge of the default branch
+
+
+def test_mergeable_pull_request_skips_the_default_branch(pilot):
+    at_step(pilot, "review-issue")
+    pilot.result("gh", "pr", "view", "5", "--json", "mergeable", out="MERGEABLE")
+    pilot.result(
+        "gh",
+        "api",
+        "repos/{owner}/{repo}/rules/branches/main?per_page=100",
+        out="false",
+    )
+    actions = finish(pilot, out=result(verdict="approve"))
+    assert not pilot.ran("merge-default-branch.py")
+    assert pilot.state["waiting_for"] == "ci"
+    assert actions[0]["background"].startswith("autopilot-task.py step sh -c")
+
+
+def test_required_up_to_date_branch_merges_the_default_branch(pilot):
+    at_step(pilot, "review-issue")
+    pilot.result("gh", "pr", "view", "5", "--json", "mergeable", out="MERGEABLE")
+    pilot.result(
+        "gh", "api", "repos/{owner}/{repo}/rules/branches/main?per_page=100", out="true"
+    )
+    finish(pilot, out=result(verdict="approve"))
+    assert pilot.ran("merge-default-branch.py")
+
+
+def test_carried_approve_waits_for_ci_without_a_review(pilot):
+    at_step(pilot, "review-issue")
+    pilot.result("merge-default-branch.py", out="merged")
+    actions = finish(pilot, out=result(verdict="approve"))
+    assert pilot.ran("gate", "carry", "5", "c" * 40)
+    assert pilot.state["sync_rounds"] == 1
+    assert pilot.state["waiting_for"] == "ci"
+    assert actions[0]["background"].startswith("autopilot-task.py step sh -c")
+
+
+def test_too_many_merges_of_the_default_branch_park(pilot):
+    at_step(pilot, "review-issue", sync_rounds=3)
+    pilot.result("merge-default-branch.py", out="merged")
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, out=result(verdict="approve"))
+    assert pilot.ran("git", "push", "origin", "issue-7-fix-the-thing")
+    assert not pilot.ran("gate", "carry")
+    entry = pilot.state["parked"][0]
+    assert entry["reason"] == "Default-Branch zu oft nachgezogen"
+    assert entry["step"] == "review-issue"
+
+
+@pytest.mark.parametrize("mergeable", ["CONFLICTING", "UNKNOWN"])
+def test_not_mergeable_pull_request_merges_the_default_branch(pilot, mergeable):
+    at_step(pilot, "review-issue")
+    pilot.result("gh", "pr", "view", "5", "--json", "mergeable", out=mergeable)
+    finish(pilot, out=result(verdict="approve"))
+    assert pilot.ran("merge-default-branch.py")
+    assert not pilot.ran("gh", "api")

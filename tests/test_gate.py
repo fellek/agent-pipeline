@@ -782,3 +782,103 @@ def test_marked_comment_runs_with_stdin(gate, project, monkeypatch):
         gate.run_gh(project, ["issue", "comment", "5", "--body-file", "-"])
     assert code.value.code == 0
     assert calls[0][1]["input"] == "x" + MARK
+
+
+# carry
+
+
+@pytest.fixture
+def carrying(gate, project, monkeypatch, tmp_path, git_identity):
+    repo = tmp_path / "mirror"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, "a", "a")
+    git(repo, "switch", "-q", "-c", "issue-5")
+    approved = commit(repo, "b", "b")
+    git(repo, "switch", "-q", "main")
+    commit(repo, "c", "c")
+    git(repo, "switch", "-q", "issue-5")
+    git(repo, "merge", "-q", "--no-edit", "main")
+    head = git(repo, "rev-parse", "HEAD")
+    project.mirror = repo
+    state = {"reviews": [attested(sha=approved)], "posted": []}
+    monkeypatch.setattr(gate, "refresh_mirror", lambda p: None)
+    monkeypatch.setattr(gate, "pull_request", lambda p, pr, sha: pull(sha=sha))
+    monkeypatch.setattr(gate, "reviews", lambda p, pr: state["reviews"])
+    monkeypatch.setattr(
+        gate, "post_review", lambda p, pr, sha, body, c: state["posted"].append(body)
+    )
+    monkeypatch.setattr(
+        project, "gh_json", lambda *args: {"default_branch": "main"}, raising=False
+    )
+    return {"repo": repo, "approved": approved, "head": head, **state}
+
+
+def test_carry_approves_a_clean_merge_of_the_default_branch(gate, project, carrying):
+    gate.carry(project, 5, carrying["head"])
+    body = carrying["posted"][0]
+    assert attestation.verdict(body, KEY, 5, carrying["head"]) == attestation.APPROVE
+    assert f"Approve von {carrying['approved']} übernommen" in body
+
+
+def test_carry_needs_an_approve_on_the_first_parent(gate, project, carrying):
+    carrying["reviews"].clear()
+    with pytest.raises(gate.Refused, match="no attested approve"):
+        gate.carry(project, 5, carrying["head"])
+    assert carrying["posted"] == []
+
+
+def test_carry_refuses_a_merge_that_touches_files_of_the_pr(gate, project, carrying):
+    repo = carrying["repo"]
+    git(repo, "switch", "-q", "main")
+    commit(repo, "f", "1\n2\n3\n4\n5\n6\n")
+    git(repo, "switch", "-q", "-c", "issue-6")
+    approved = commit(repo, "f", "one\n2\n3\n4\n5\n6\n")
+    git(repo, "switch", "-q", "main")
+    commit(repo, "f", "1\n2\n3\n4\n5\nsix\n")
+    git(repo, "switch", "-q", "issue-6")
+    git(repo, "merge", "-q", "--no-edit", "main")
+    carrying["reviews"][:] = [attested(sha=approved)]
+    with pytest.raises(gate.Refused, match="changed files of the pull request: f"):
+        gate.carry(project, 5, git(repo, "rev-parse", "HEAD"))
+
+
+def test_carry_refuses_a_merge_with_changes_of_its_own(gate, project, carrying):
+    repo = carrying["repo"]
+    (repo / "d").write_text("d")
+    git(repo, "add", "d")
+    git(repo, "commit", "-q", "--amend", "--no-edit")
+    with pytest.raises(gate.Refused, match="not a clean merge"):
+        gate.carry(project, 5, git(repo, "rev-parse", "HEAD"))
+
+
+def test_carry_refuses_a_commit_that_is_no_merge(gate, project, carrying):
+    with pytest.raises(gate.Refused, match="not a merge commit"):
+        gate.carry(project, 5, carrying["approved"])
+
+
+def test_carry_refuses_a_pull_request_on_another_base(
+    gate, project, carrying, monkeypatch
+):
+    monkeypatch.setattr(
+        gate, "pull_request", lambda p, pr, sha: pull(sha=sha, base="issue-9")
+    )
+    with pytest.raises(gate.Refused, match="targets issue-9, not main"):
+        gate.carry(project, 5, carrying["head"])
+
+
+def test_carry_refuses_an_edit_moved_into_a_renamed_file(gate, project, carrying):
+    repo = carrying["repo"]
+    git(repo, "switch", "-q", "main")
+    commit(repo, "g", "1\n2\n3\n4\n5\n6\n")
+    git(repo, "switch", "-q", "-c", "issue-6")
+    git(repo, "mv", "g", "h")
+    git(repo, "commit", "-q", "-m", "rename")
+    approved = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-q", "main")
+    commit(repo, "g", "1\n2\n3\n4\n5\nsix\n")
+    git(repo, "switch", "-q", "issue-6")
+    git(repo, "merge", "-q", "--no-edit", "main")
+    carrying["reviews"][:] = [attested(sha=approved)]
+    with pytest.raises(gate.Refused, match="changed files of the pull request: g"):
+        gate.carry(project, 5, git(repo, "rev-parse", "HEAD"))
