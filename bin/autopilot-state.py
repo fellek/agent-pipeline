@@ -122,6 +122,7 @@ PARKED_FIELDS = (
     "sync_rounds",
     "attempts_per_step",
     "fork_runs",
+    "held_answer",
     "usage",
     "questions",
     "events_since",
@@ -602,7 +603,8 @@ class Autopilot:
     def run_step(self, answer=""):
         """Loop step 4: start the step of the current issue."""
         step = self.s["step"]
-        answer, self.s["held_answer"] = answer or self.s["held_answer"] or "", None
+        # A held answer belongs to the step; the answer to a Budget park only grants more.
+        answer, self.s["held_answer"] = self.s["held_answer"] or answer or "", None
         # The session may have ended between the merge and the reset of the state.
         if self.s["pr"] and self.merged():
             self.log("already merged")
@@ -638,7 +640,8 @@ class Autopilot:
                 f"#{n} weiter",
                 "status",
             )
-            self.park("Budget", answer or None)
+            self.s["held_answer"] = answer or None
+            self.park("Budget")
         today = now()[:10]
         if self.s["day"] != today:
             self.s.update(day=today, day_forks=0)
@@ -1100,7 +1103,6 @@ class Autopilot:
                 self.wait()
         n = self.s["issue"]
         was_paused = self.s["paused"]
-        answer = answer or self.s["held_answer"]
         self.set_label(n, "parked")
         patch = reason == "Patch"
         entry = {field: self.s[field] for field in PARKED_FIELDS}

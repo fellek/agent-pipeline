@@ -1794,7 +1794,29 @@ def test_park_during_the_day_budget_keeps_the_answer(pilot):
     pilot.event("telegram", "1", text="#7 take x")
     pilot.result("autopilot-poll.py", "next", out="")
     pilot.event("telegram", "1", text="park #7")
-    assert pilot.state["parked"][0]["answer"] == "take x"
+    assert pilot.state["parked"][0]["held_answer"] == "take x"
+    assert pilot.state["parked"][0]["answer"] is None
+
+
+def test_answer_at_the_issue_budget_stays_parked(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0", fork_runs=15)
+    pilot.result("autopilot-poll.py", "next", out="")
+    actions = finish(pilot, result(summary="use x"))
+    entry = pilot.state["parked"][0]
+    assert (entry["reason"], entry["answer"], entry["held_answer"]) == (
+        "Budget",
+        None,
+        "use x",
+    )
+    assert not any("skill" in action for action in actions)
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 7, "body": "go on"}),
+    )
+    pilot.state = {"parked": pilot.state["parked"]}
+    actions = pilot.event("start", "")
+    assert actions[0]["args"] == '7 "use x" ""'
 
 
 def test_find_answer_counts_for_the_budget(pilot):
