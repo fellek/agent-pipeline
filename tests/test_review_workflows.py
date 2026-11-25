@@ -18,3 +18,10 @@ def test_the_review_key_reaches_only_code_of_the_base(path):
     )
     assert "ref: ${{ github.event.pull_request.base.sha }}" in checkout.group(0)
     assert text.index("actions/checkout") < text.index("review-key:")
+
+
+@pytest.mark.parametrize("folder", [".github/workflows", "templates/github/workflows"])
+def test_sync_skips_pull_requests_from_forks(folder):
+    text = (ROOT / folder / "agent-review-sync.yml").read_text()
+    condition = "if: github.event.pull_request.head.repo.full_name == github.repository"
+    assert f"    {condition}\n    runs-on:" in text
