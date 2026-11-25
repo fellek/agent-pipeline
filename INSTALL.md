@@ -14,7 +14,7 @@ Als Projekt-Benutzer:
 3. `claude` (mindestens 2.1.239) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`.
 4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
 
-`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `tmux`, `bun`, die `gh`-Anmeldung, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
+`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `tmux`, `bun`, `python3`, die `gh`-Anmeldung, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
 
 ## 2. GitHub (als Projekt-Benutzer)
 
