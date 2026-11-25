@@ -125,6 +125,7 @@ def test_allowed_gh_commands(gate, args):
         (["repo", "delete", "o/app"], "gh repo delete is not allowed"),
         (["secret", "set", "X"], "gh secret set is not allowed"),
         (["issue", "delete", "5"], "gh issue delete is not allowed"),
+        (["run", "rerun", "7"], "gh run rerun is not allowed"),
         (["issue", "comment", "5", "--body-file", "/etc/x"], "--body-file reads only"),
         (["issue", "comment", "5", "-F", "/etc/x"], "-F reads only"),
         (["pr", "edit", "5", "--body-file=/etc/x"], "--body-file reads only"),

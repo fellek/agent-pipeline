@@ -9,7 +9,7 @@ Status: angenommen
 - [`agent-review-sync.yml`](../../.github/workflows/agent-review-sync.yml) läuft auf `pull_request_review` (`submitted`, `dismissed`) und ruft `agent-review.py sync` auf: Es wartet auf den letzten Lauf des Pushs auf dem Head-Commit und führt ihn erneut aus, wenn sein Ergebnis nicht zum Verdict passt. Der Re-Run liest die Reviews neu, wird also nach einem Approve grün und nach Changes requested oder einem verworfenen Approve rot. Der Job heißt `agent-review-sync`, damit kein zweiter Check `agent-review` entsteht; ohne `cancel-in-progress`, damit kein Sync abgebrochen wird.
 - Antworten auf Threads ändern das Verdict nicht und lösen keinen Re-Run aus.
 - `sync` schlägt nur fehl, wenn der Lauf danach nicht zum Verdict passt. Ein roter Lauf ohne Approve ist der richtige Zustand, sonst kostete jedes Changes requested und jede Thread-Antwort davor einen roten `agent-review-sync`-Lauf samt Mail. Der Orchestrator wertet deshalb die Ausgabe `green` aus.
-- Der Orchestrator ruft in Schritt 7 ebenfalls `agent-review.py sync` auf. Es ist Gate und Rückfallebene, falls der Workflow fehlt oder langsamer ist. Ein abgelehntes `gh pr merge` ist ein Fehlversuch und schließt weder Issue noch setzt es den Zustand zurück.
+- Der Orchestrator ruft in Schritt 7 `agent-review.py await` auf: wie `sync`, aber ohne Re-Run, weil sein Token Actions nur liest (#63). Passt der Lauf nicht zum Verdict, wartet er bis zu 10 Minuten auf den Re-Run des Workflows; fehlt der Workflow, scheitert der Schritt mit `red`. Ein abgelehntes `gh pr merge` ist ein Fehlversuch und schließt weder Issue noch setzt es den Zustand zurück.
 
 ## Verworfen
 
