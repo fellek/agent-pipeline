@@ -76,7 +76,6 @@ def test_orchestrator_restarts_on_new_pinned_release():
     assert "just invoked, run `release-changed.sh record`" in skill
     assert "run `release-changed.sh`" in merge
     assert "Restart with" in merge
-    assert "infrastructure" not in merge
     assert "`.claude/pipeline-release` exists" in restart
     assert "`.claude/skills/pipeline/host/use-release.sh`" in restart
     assert "`autopilot-restart.sh`" in restart

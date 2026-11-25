@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Opens a pull request in the project in the working directory that moves the pipeline
-# to <tag>, with the release notes and the label infrastructure: in a project the
-# submodule, in the pipeline repository itself the tag in .claude/pipeline-release.
+# to <tag>, with the release notes: in a project the submodule, in the pipeline
+# repository itself the tag in .claude/pipeline-release.
 host=$(cd "$(dirname "$0")" && pwd)
 sub=.claude/skills/pipeline
 pin=.claude/pipeline-release
@@ -60,7 +60,7 @@ fi
 git add "$target"
 git commit --quiet -m "Bump pipeline to $tag"
 git push --quiet -u origin "$branch"
-gh pr create --base "$default" --head "$branch" --label infrastructure \
+gh pr create --base "$default" --head "$branch" \
   --title "Bump pipeline to $tag" \
   --body "Moves \`$target\` from $old_name to $tag.
 
