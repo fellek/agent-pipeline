@@ -15,10 +15,10 @@ Mit sudo-Rechten:
    sudo loginctl enable-linger autopilot
    ```
 
-2. `git`, `gh`, `sudo`, `tmux`, `python3` (für die Skripte in `bin/`, `host/` und `hooks/`) sowie `bubblewrap` und `socat` (für die Bash-Sandbox) installieren, unter Debian und Ubuntu:
+2. `git`, `gh`, `sudo`, `tmux`, `python3` (für die Skripte in `bin/`, `host/` und `hooks/`), `bubblewrap` und `socat` (für die Bash-Sandbox) sowie `curl` und `unzip` (für die Installer in 3.) installieren, unter Debian und Ubuntu:
 
    ```
-   sudo apt-get install -y git gh sudo tmux python3 bubblewrap socat
+   sudo apt-get install -y git gh sudo tmux python3 bubblewrap socat curl unzip
    ```
 
    Unter Ubuntu ab 24.04 braucht `bwrap` bei `kernel.apparmor_restrict_unprivileged_userns = 1` ein AppArmor-Profil, siehe die Sandbox-Doku von Claude Code.
@@ -29,9 +29,9 @@ Als Projekt-Benutzer (`sudo -iu autopilot`):
 
    ```
    v=$(curl -fsSL https://raw.githubusercontent.com/fellek/agent-pipeline/<tag>/host/versions.sh | sed -n 's/^claude_code=//p')
-   curl -fsSL https://claude.ai/install.sh | bash -s "$v"
+   [ -n "$v" ] && curl -fsSL https://claude.ai/install.sh | bash -s "$v"
    curl -fsSL https://bun.sh/install | bash
-   mkdir -p ~/.claude && echo '{"env": {"DISABLE_AUTOUPDATER": "1"}}' > ~/.claude/settings.json
+   mkdir -p ~/.claude && [ -e ~/.claude/settings.json ] || echo '{"env": {"DISABLE_AUTOUPDATER": "1"}}' > ~/.claude/settings.json
    export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
    ```
 
@@ -60,7 +60,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
    ```
    v=$(. host/versions.sh && echo "$claude_code")
    sudo -u pipeline-gate -H bash -c "cd && curl -fsSL https://claude.ai/install.sh | bash -s $v"
-   sudo -u pipeline-gate -H bash -c 'mkdir -p ~/.claude && echo "{\"env\": {\"DISABLE_AUTOUPDATER\": \"1\"}}" > ~/.claude/settings.json'
+   sudo -u pipeline-gate -H bash -c 'mkdir -p ~/.claude && [ -e ~/.claude/settings.json ] || echo "{\"env\": {\"DISABLE_AUTOUPDATER\": \"1\"}}" > ~/.claude/settings.json'
    sudo -u pipeline-gate -H bash -c 'cd && ~/.local/bin/claude'
    ```
 
@@ -198,7 +198,7 @@ Zustand, Log und Bildschirm der Session; dann der Dienst, der `active (running)`
 
 ```
 .claude/skills/pipeline/host/autopilot-status.sh
-XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user status 'autopilot-*'
+XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user status autopilot-<Repository>
 ```
 
 Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Auswahl-Label.
