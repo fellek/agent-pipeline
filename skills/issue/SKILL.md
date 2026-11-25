@@ -10,19 +10,21 @@ effort: high
 
 Work on GitHub issue #$0.
 
+The pipeline rules are `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`; read the file only if the project's `CLAUDE.md` import has not already loaded it into your context.
+
 Maintainer answer to an earlier open question (empty if none): $1
 
 Failure summary of the previous attempt (empty if none): $2
 If set, check that cause first and do not repeat the same approach.
 
-1. Read the issue with `issue-text.py $0`, which prints only the text you may read; do not read the issue or its comments any other way. If it exits non-zero, end with `STATUS: blocked` and its message as `SUMMARY`. Handle unclear scope or acceptance criteria as described in `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md` under "Autopilot operation".
+1. Read the issue with `issue-text.py $0`, which prints only the text you may read; do not read the issue or its comments any other way. If it exits non-zero, end with `STATUS: blocked` and its message as `SUMMARY`. Handle unclear scope or acceptance criteria as described in the pipeline rules under "Autopilot steps".
 2. Check for an existing branch or PR for this issue. If one exists, continue there.
 3. Otherwise create branch `issue-$0-<short-slug>` from the current default branch (printed by `default-branch.py`).
 4. Implement the smallest change that satisfies the issue. Add or update tests.
 5. Run the checks listed in `.claude/rules/project.md`. On failure read the logs first. Do not report `done` while a check fails.
-6. Create a followup issue for each finding outside the scope, as described in `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`. List them in the PR description and the issue comment.
+6. Create a followup issue for each finding outside the scope, as described in the pipeline rules. List them in the PR description and the issue comment.
 7. Push and open a PR to the default branch with `Closes #$0` in the description.
 8. Post a brief comment on the issue: PR link, what was done, open points.
-9. End with the result block from `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`.
+9. End with the result block of the pipeline rules.
 
 Do not merge.

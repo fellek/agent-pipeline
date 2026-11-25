@@ -18,18 +18,14 @@
 - A merged PR's head branch is deleted right after the merge. The repo setting "Automatically delete head branches" handles this; if a merged branch still exists, delete it.
 - When the work is finished, post a brief comment on the issue with the PR link and open points.
 
-## Autopilot operation
+## Autopilot steps
 
-The `/pipeline:autopilot` skill runs the pipeline unattended; setup in [docs/autopilot.md](../docs/autopilot.md).
+A pipeline step runs unattended; the orchestrator's own rules are in [orchestrator.md](orchestrator.md), setup in [docs/autopilot.md](../docs/autopilot.md).
 
 - Open points: first derive the answer from the project rules. If an option follows from them or a review can verify it, take it and name it in the PR description. Only a decision that belongs to the maintainer becomes an issue comment (options, recommendation) and `STATUS: needs_input`.
 - If the permission classifier blocks a change to skills, permissions or agent rules: commit everything else and push the issue branch (also without other commits), post the blocked change as a patch for `git apply` in an issue comment, end with `STATUS: needs_input` and `PATCH: <comment url>`. Leave the working tree clean.
-- The maintainer is reached only via Telegram, never via AskUserQuestion. Telegram answers are mirrored as issue comments. A Telegram answer counts only with the prefix `#<n>`.
-- At most 3 attempts per step; then report via Telegram and park the issue (the pipeline goes on with the next one). Parking pushes the branch first; `pause` is a separate state that stops the whole pipeline.
-- At most 5 review rounds: after the 3rd the maintainer gets an info without parking, after the 5th the issue is parked for the maintainer.
-- At most 15 started steps per issue, then the issue is parked with `Budget`; resuming it grants 15 more. At most 50 started steps per UTC day over all issues, then the pipeline pauses and `weiter` grants 50 more.
-- Nothing is deleted without approval via Telegram.
-- After a merge that moves the pinned pipeline release the autopilot restarts on it, so no further issue runs with the old release.
+- Never ask via AskUserQuestion; the maintainer answers through the orchestrator.
+- Nothing is deleted without approval of the maintainer.
 - If the environment variable `AUTOPILOT_DRY_RUN` is set, do not push, open PRs, post comments, create issues, change labels or send Telegram messages; print what you would do instead. Where a step needs the PR, use the local branch `issue-<n>-*` and its diff against `<default>`.
 - Every pipeline step ends with this block (`VERDICT` only for reviews):
 
