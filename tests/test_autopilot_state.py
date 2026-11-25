@@ -1686,6 +1686,155 @@ def test_latest_setprio_decides_the_plan(pilot, plan, kept):
     assert pilot.state["plan_skip"] == kept
 
 
+# Budget
+
+
+def test_issue_budget_parks_the_issue(pilot):
+    at_step(pilot, "plan-issue", fork_runs=15)
+    pilot.result("autopilot-poll.py", "next", out="")
+    actions = finish(pilot, result())
+    assert pilot.sent[0] == (
+        "#7 geparkt, Budget erreicht: 15 Fork-Läufe",
+        ("#7 weiter", "status"),
+    )
+    assert "#7 geparkt (Budget)" not in pilot.texts()
+    assert pilot.state["parked"][0]["reason"] == "Budget"
+    assert pilot.state["parked"][0]["fork_runs"] == 15
+    assert not any("skill" in action for action in actions)
+
+
+def test_each_started_step_counts_for_the_issue_and_the_day(pilot):
+    at_step(pilot, "plan-issue", fork_runs=3, day=pilot.module.now()[:10], day_forks=9)
+    finish(pilot, result())
+    assert pilot.state["fork_runs"] == 4
+    assert pilot.state["day_forks"] == 10
+
+
+def test_day_budget_pauses_and_weiter_grants_more(pilot):
+    at_step(pilot, "plan-issue", day=pilot.module.now()[:10], day_forks=50)
+    actions = finish(pilot, result())
+    assert pilot.sent[-1] == (
+        "Tagesbudget erreicht: 50 Fork-Läufe heute, weiter gibt 50 weitere frei",
+        ("weiter", "status"),
+    )
+    assert pilot.state["paused"] is True
+    assert pilot.state["step"] == "issue"
+    assert not any("skill" in action for action in actions)
+    actions = pilot.event("telegram", "1", text="weiter")
+    assert actions[0]["skill"] == "pipeline:issue"
+    assert pilot.state["day_forks"] == 1
+
+
+def test_day_budget_starts_again_on_a_new_day(pilot):
+    at_step(pilot, "plan-issue", day="2000-01-01", day_forks=50)
+    actions = finish(pilot, result())
+    assert actions[0]["skill"] == "pipeline:issue"
+    assert pilot.state["day"] == pilot.module.now()[:10]
+    assert pilot.state["day_forks"] == 1
+
+
+@pytest.mark.parametrize("reason", ["Budget", "Rückfrage"])
+def test_resumed_park_gets_a_new_budget(pilot, reason):
+    pilot.state = {
+        "parked": [parked(reason=reason, fork_runs=15, question=None)],
+    }
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 4, "body": "go on"}),
+    )
+    actions = pilot.event("start", "")
+    assert actions[0]["skill"] == "pipeline:plan-issue"
+    assert pilot.state["fork_runs"] == 1
+
+
+def today(pilot):
+    return pilot.module.now()[:10]
+
+
+def test_day_budget_keeps_the_answer_of_a_resume(pilot):
+    pilot.state = {
+        "parked": [parked(question=None)],
+        "day": today(pilot),
+        "day_forks": 50,
+    }
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 4, "body": "take a"}),
+    )
+    pilot.event("start", "")
+    assert pilot.state["paused"] is True
+    actions = pilot.event("telegram", "1", text="weiter")
+    assert actions[0] == {"skill": "pipeline:plan-issue", "args": '4 "take a" ""'}
+    assert pilot.state["held_answer"] is None
+
+
+def test_day_budget_keeps_a_telegram_answer(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0")
+    pilot.state.update(day=today(pilot), day_forks=50)
+    pilot.event("telegram", "1", text="#7 take x")
+    assert pilot.state["paused"] is True
+    actions = pilot.event("telegram", "1", text="weiter")
+    assert actions[0] == {"skill": "pipeline:plan-issue", "args": '7 "take x" ""'}
+
+
+def test_day_budget_keeps_a_found_answer(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0")
+    pilot.state.update(day=today(pilot), day_forks=50)
+    finish(pilot, result(summary="use x"))
+    assert pilot.state["paused"] is True
+    actions = pilot.event("telegram", "1", text="weiter")
+    assert actions[0] == {"skill": "pipeline:plan-issue", "args": '7 "use x" ""'}
+
+
+def test_park_during_the_day_budget_keeps_the_answer(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0")
+    pilot.state.update(day=today(pilot), day_forks=50)
+    pilot.event("telegram", "1", text="#7 take x")
+    pilot.result("autopilot-poll.py", "next", out="")
+    pilot.event("telegram", "1", text="park #7")
+    assert pilot.state["parked"][0]["held_answer"] == "take x"
+    assert pilot.state["parked"][0]["answer"] is None
+
+
+def test_answer_at_the_issue_budget_stays_parked(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION, events_since="t0", fork_runs=15)
+    pilot.result("autopilot-poll.py", "next", out="")
+    actions = finish(pilot, result(summary="use x"))
+    entry = pilot.state["parked"][0]
+    assert (entry["reason"], entry["answer"], entry["held_answer"]) == (
+        "Budget",
+        None,
+        "use x",
+    )
+    assert not any("skill" in action for action in actions)
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 7, "body": "go on"}),
+    )
+    pilot.state = {"parked": pilot.state["parked"]}
+    actions = pilot.event("start", "")
+    assert actions[0]["args"] == '7 "use x" ""'
+
+
+def test_find_answer_counts_for_the_budget(pilot):
+    at_step(pilot, "plan-issue", fork_runs=2)
+    finish(pilot, result("needs_input", open_questions=QUESTION))
+    assert pilot.state["fork_runs"] == 3
+
+
+def test_task_command_resume_gets_a_new_budget(pilot):
+    pilot.state = {
+        "paused": True,
+        "waiting_for": "resume",
+        "parked": [parked(pr=6, reason="Budget", fork_runs=15)],
+    }
+    message(pilot, "/fix-review 4")
+    assert pilot.state["fork_runs"] == 1
+
+
 # Usage and metrics
 
 
