@@ -68,6 +68,59 @@
       "Read(~/.claude/channels/**/.env)"
     ]
   },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "autoAllowBashIfSandboxed": false,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [
+      "git status*",
+      "git diff*",
+      "git log*",
+      "git show*",
+      "git rev-parse*",
+      "git switch *",
+      "git fetch*",
+      "git pull*",
+      "git add *",
+      "git commit *",
+      "git push *",
+      "gh issue *",
+      "gh pr *",
+      "gh run *",
+      "agent-review.py*",
+      "autopilot-poll.py*",
+      "autopilot-restart.sh*",
+      "check-project.py*",
+      ".claude/skills/pipeline/bin/check-project.py*",
+      "cleanup-tree.py*",
+      "default-branch.py*",
+      "issue-pr.py*",
+      "leave-branch.py*",
+      "merge-default-branch.py*",
+      "open-review-threads.py*",
+      "pipeline-metrics.py*",
+      "release-changed.sh*",
+      ".claude/skills/pipeline/host/update-pipeline.sh*",
+      ".claude/skills/pipeline/host/use-release.sh*",
+      "telegram-send.py*",
+      "watch-ci.py*",
+      "claude plugin validate*"
+    ],
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ]
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache/uv"
+      ]
+    }
+  },
   "hooks": {
     "SessionStart": [
       {

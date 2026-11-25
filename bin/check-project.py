@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Check the project in the working directory against the pipeline's requirements.
 
-Fails if .claude/settings.json lacks a deny rule or the SessionStart hook of the
-pipeline's settings template (it warns about a missing or stale release), or if neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's
+Fails if .claude/settings.json lacks a deny rule, the SessionStart hook (it warns
+about a missing or stale release) or a switch of the Bash sandbox of the
+pipeline's settings template, or if neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's
 workflow rules: an @ line whose path, relative to the file it is in, points to
 .claude/skills/pipeline/rules/workflow.md of the project. Only the path counts,
 not whether the file exists, so the check passes without the release checked out.
@@ -71,6 +72,12 @@ def settings_problems(settings):
         f"{SETTINGS} lacks the SessionStart hook of the pipeline: {command}"
         for command in session_start_commands(template)
         if command not in commands
+    ]
+    sandbox = settings.get("sandbox", {})
+    problems += [
+        f"{SETTINGS} lacks sandbox.{key}: {json.dumps(value)}"
+        for key, value in template["sandbox"].items()
+        if isinstance(value, bool) and sandbox.get(key) != value
     ]
     return problems
 
