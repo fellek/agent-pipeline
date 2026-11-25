@@ -10,7 +10,6 @@ SINCE = "2026-11-13T10:00:00Z"
 @pytest.fixture
 def poll(monkeypatch):
     module = load_script("autopilot-poll.py")
-    monkeypatch.setattr(module, "dependencies", lambda number, relation: [])
     monkeypatch.setattr(module, "maintainer", lambda: "maintainer")
     return module
 
@@ -74,14 +73,12 @@ def test_owner_comment_after_cursor_is_printed(monkeypatch, capsys, poll):
         comment(created_at=SINCE),
         comment(login="someone"),
         comment(body="Antwort gefunden: x\n\n<!-- pipeline -->"),
-        comment(number=47),
     ],
     ids=[
         "before_cursor",
         "on_cursor",
         "not_maintainer",
         "of_the_pipeline",
-        "other_issue",
     ],
 )
 def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
@@ -92,29 +89,33 @@ def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     assert [e["number"] for e in events(capsys)] == [55]
 
 
-def issue(number, *labels, association="OWNER"):
+def issue(number, *labels, association="OWNER", blocked_by=0, blocking=0):
+    """An issue of the list; the summary counts its open dependencies."""
     return {
         "number": number,
         "title": "Neu",
         "labels": [{"name": n} for n in labels],
         "author_association": association,
+        "issue_dependencies_summary": {"blocked_by": blocked_by, "blocking": blocking},
     }
 
 
 def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
     calls = fake_gh(
-        monkeypatch, poll, [issue(60), {**issue(61), "pull_request": {}}], [], []
+        monkeypatch,
+        poll,
+        [issue(60, "batch-1"), {**issue(61, "batch-1"), "pull_request": {}}],
+        [],
     )
 
     poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
     answer_events = poll.poll([("answer", 48, SINCE)])
 
     assert events(capsys) == [
-        {"type": "labeled_issue", "number": 60, "title": "Neu", "labels": []}
+        {"type": "labeled_issue", "number": 60, "title": "Neu", "labels": ["batch-1"]}
     ]
-    assert "labels=batch-1" in calls[0]
+    assert calls[0] == "repos/{owner}/{repo}/issues?state=open&per_page=100"
     assert answer_events == []
-    assert "labels=" not in calls[2]
 
 
 @pytest.mark.parametrize("label", ["question", "parked"])
@@ -123,9 +124,7 @@ def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
         monkeypatch,
         poll,
         [issue(60, "batch-1", label)],
-        [],
         [issue(61, "batch-1")],
-        [],
     )
 
     poll.wait([("new_issue", "batch-1")], sleep=no_sleep)
@@ -133,16 +132,8 @@ def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
     assert [e["number"] for e in events(capsys)] == [61]
 
 
-def fake_dependencies(monkeypatch, poll, **states):
-    def dependencies(number, relation):
-        return [{"state": s} for s in states.get(f"{relation}_{number}", [])]
-
-    monkeypatch.setattr(poll, "dependencies", dependencies)
-
-
 def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [issue(60), issue(61)], [])
-    fake_dependencies(monkeypatch, poll, blocked_by_60=["closed", "open"])
+    fake_gh(monkeypatch, poll, [issue(60, "ready", blocked_by=1), issue(61, "ready")])
 
     poll.check([("new_issue", "ready")])
 
@@ -151,31 +142,39 @@ def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
 
 @pytest.mark.parametrize(
     ("blocker", "chosen", "labels"),
-    [("open", 61, ["ready"]), ("closed", 60, ["ready", "enhancement"])],
+    [(1, 61, ["ready"]), (0, 60, ["ready", "enhancement"])],
     ids=["open", "closed"],
 )
 def test_next_skips_issue_with_open_blocker(
     monkeypatch, capsys, poll, blocker, chosen, labels
 ):
     calls = fake_gh(
-        monkeypatch, poll, [issue(61, "ready"), issue(60, "ready", "enhancement")]
+        monkeypatch,
+        poll,
+        [issue(61, "ready"), issue(60, "ready", "enhancement", blocked_by=blocker)],
     )
-    fake_dependencies(monkeypatch, poll, blocked_by_60=[blocker])
 
     poll.main(["next", "ready"])
 
     assert events(capsys) == [{"number": chosen, "title": "Neu", "labels": labels}]
-    assert "labels=ready" in calls[0]
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize(
-    ("blocked", "chosen"), [("open", 61), ("closed", 60)], ids=["open", "closed"]
+    ("blocked", "chosen"), [(1, 61), (0, 60)], ids=["open", "closed"]
 )
 def test_next_prefers_issue_blocking_an_open_issue(
     monkeypatch, capsys, poll, blocked, chosen
 ):
-    fake_gh(monkeypatch, poll, [issue(60), issue(61), issue(62)])
-    fake_dependencies(monkeypatch, poll, blocking_61=[blocked], blocking_62=[blocked])
+    fake_gh(
+        monkeypatch,
+        poll,
+        [
+            issue(60, "ready"),
+            issue(61, "ready", blocking=blocked),
+            issue(62, "ready", blocking=blocked),
+        ],
+    )
 
     poll.main(["next", "ready"])
 
@@ -223,7 +222,7 @@ def test_untriaged_reports_issue_without_status_label(monkeypatch, capsys, poll)
 
 
 def test_new_issue_wakes_on_untriaged_issue(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [], [], [], [issue(60)])
+    fake_gh(monkeypatch, poll, [], [issue(60)])
     sleeps = []
 
     poll.wait([("new_issue", "ready")], sleep=sleeps.append)
@@ -241,15 +240,6 @@ def test_next_selects_issue_with_selection_label_only(monkeypatch, capsys, poll)
     poll.main(["untriaged", "batch-1"])
 
     assert [e["number"] for e in events(capsys)] == [60]
-
-
-def test_dependencies_read_relation_endpoint(monkeypatch):
-    poll = load_script("autopilot-poll.py")
-    calls = fake_gh(monkeypatch, poll, [])
-
-    poll.dependencies(60, "blocked_by")
-
-    assert calls == ["repos/{owner}/{repo}/issues/60/dependencies/blocked_by"]
 
 
 def test_keeps_polling_without_events(monkeypatch, capsys, poll):
@@ -315,14 +305,17 @@ def test_github_now_fails_without_date_header(monkeypatch, poll):
 LATER = "2026-11-13T11:00:00Z"
 
 
-def test_answers_use_cursor_per_issue_in_one_fetch(monkeypatch, capsys, poll):
-    comments = [
-        comment(number=48, created_at="2026-11-13T10:30:00Z"),
-        comment(number=55, created_at="2026-11-13T10:30:00Z"),
-        comment(number=55, created_at="2026-11-13T11:00:01Z", login="someone"),
-        comment(number=55, created_at="2026-11-13T11:00:02Z"),
-    ]
-    calls = fake_gh(monkeypatch, poll, comments)
+def test_answers_use_cursor_per_issue(monkeypatch, capsys, poll):
+    calls = fake_gh(
+        monkeypatch,
+        poll,
+        [comment(number=48, created_at="2026-11-13T10:30:00Z")],
+        [
+            comment(number=55, created_at="2026-11-13T10:30:00Z"),
+            comment(number=55, created_at="2026-11-13T11:00:01Z", login="someone"),
+            comment(number=55, created_at="2026-11-13T11:00:02Z"),
+        ],
+    )
 
     poll.wait([("answer", 48, SINCE), ("answer", 55, LATER)], sleep=no_sleep)
 
@@ -330,12 +323,14 @@ def test_answers_use_cursor_per_issue_in_one_fetch(monkeypatch, capsys, poll):
         (48, "2026-11-13T10:30:00Z"),
         (55, "2026-11-13T11:00:02Z"),
     ]
-    assert len(calls) == 1
-    assert f"since={SINCE}" in calls[0]
+    assert calls == [
+        f"repos/{{owner}}/{{repo}}/issues/48/comments?since={SINCE}&per_page=100",
+        f"repos/{{owner}}/{{repo}}/issues/55/comments?since={LATER}&per_page=100",
+    ]
 
 
 def test_wait_ends_on_first_event_of_any_target(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [], [], [], [], [issue(60)], [])
+    fake_gh(monkeypatch, poll, [], [], [], [issue(60, "ready")])
     heads = ["abc", "def"]
     monkeypatch.setattr(poll, "branch_head", lambda branch: heads.pop(0))
     targets = [
@@ -408,16 +403,20 @@ def test_main_rejects_invalid_arguments(poll, argv):
     "association", ["CONTRIBUTOR", "NONE", "FIRST_TIME_CONTRIBUTOR"]
 )
 def test_untriaged_skips_issues_of_strangers(monkeypatch, poll, association):
-    fake_gh(monkeypatch, poll, [issue(60, association=association), issue(61)])
+    issues = [issue(60, association=association), issue(61)]
 
-    assert [i["number"] for i in poll.untriaged("ready")] == [61]
+    assert [i["number"] for i in poll.untriaged("ready", issues)] == [61]
 
 
 @pytest.mark.parametrize("association", ["OWNER", "MEMBER", "COLLABORATOR"])
 def test_untriaged_takes_issues_of_the_team(monkeypatch, poll, association):
-    fake_gh(monkeypatch, poll, [issue(60, association=association)])
+    issues = [issue(60, association=association)]
 
-    assert [i["number"] for i in poll.untriaged("ready")] == [60]
+    assert [i["number"] for i in poll.untriaged("ready", issues)] == [60]
+
+
+def candidate_numbers(poll, *issues):
+    return [i["number"] for i in poll.candidates("ready", list(issues))]
 
 
 def labeled(login, name="ready", at="2026-01-02T00:00:00Z"):
@@ -469,13 +468,11 @@ def fake_permissions(monkeypatch, poll, edited="", **permissions):
 def test_stranger_issue_is_a_candidate_only_if_a_writer_labeled_it(
     monkeypatch, poll, label_events, expected
 ):
-    calls = fake_gh(
-        monkeypatch, poll, [issue(60, "ready", association="NONE")], label_events
-    )
+    calls = fake_gh(monkeypatch, poll, label_events)
     fake_permissions(monkeypatch, poll, maintainer="admin", guest="read")
 
-    assert [i["number"] for i in poll.candidates("ready")] == expected
-    assert calls[1] == "repos/{owner}/{repo}/issues/60/events?per_page=100"
+    assert candidate_numbers(poll, issue(60, "ready", association="NONE")) == expected
+    assert calls == ["repos/{owner}/{repo}/issues/60/events?per_page=100"]
 
 
 @pytest.mark.parametrize(
@@ -488,28 +485,38 @@ def test_stranger_issue_is_a_candidate_only_if_a_writer_labeled_it(
     ids=["never_edited", "edited_before_label", "edited_after_label"],
 )
 def test_edit_after_the_label_needs_a_new_label(monkeypatch, poll, edited, expected):
-    fake_gh(
-        monkeypatch,
-        poll,
-        [issue(60, "ready", association="NONE")],
-        [labeled("maintainer")],
-    )
+    fake_gh(monkeypatch, poll, [labeled("maintainer")])
     fake_permissions(monkeypatch, poll, edited=edited, maintainer="write")
 
-    assert [i["number"] for i in poll.candidates("ready")] == expected
+    assert candidate_numbers(poll, issue(60, "ready", association="NONE")) == expected
 
 
 def test_label_of_a_bot_does_not_trust(monkeypatch, poll):
-    fake_gh(
-        monkeypatch, poll, [issue(60, "ready", association="NONE")], [labeled("bot")]
-    )
+    fake_gh(monkeypatch, poll, [labeled("bot")])
     fake_permissions(monkeypatch, poll)
 
-    assert poll.candidates("ready") == []
+    assert candidate_numbers(poll, issue(60, "ready", association="NONE")) == []
 
 
 def test_team_issue_needs_no_label_check(monkeypatch, poll):
-    calls = fake_gh(monkeypatch, poll, [issue(60, "ready", association="MEMBER")])
+    calls = fake_gh(monkeypatch, poll)
 
-    assert [i["number"] for i in poll.candidates("ready")] == [60]
+    assert candidate_numbers(poll, issue(60, "ready", association="MEMBER")) == [60]
+    assert calls == []
+
+
+def test_idle_poll_costs_one_call_whatever_the_candidates(monkeypatch, poll):
+    blocked = [issue(n, "ready", blocked_by=1) for n in range(60, 110)]
+    calls = fake_gh(monkeypatch, poll, blocked)
+
+    assert poll.poll([("new_issue", "ready")]) == []
     assert len(calls) == 1
+
+
+def test_poll_stops_at_the_first_candidate(monkeypatch, poll):
+    strangers = [issue(n, "ready", association="NONE") for n in (61, 60)]
+    calls = fake_gh(monkeypatch, poll, strangers, [labeled("maintainer")])
+    fake_permissions(monkeypatch, poll, maintainer="write")
+
+    assert [e["number"] for e in poll.poll([("new_issue", "ready")])] == [60]
+    assert calls[1:] == ["repos/{owner}/{repo}/issues/60/events?per_page=100"]

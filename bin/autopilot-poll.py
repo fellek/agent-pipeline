@@ -83,12 +83,9 @@ def maintainer_events(items, number, since):
     ]
 
 
-def dependencies(number, relation):
-    return gh(f"repos/{{owner}}/{{repo}}/issues/{number}/dependencies/{relation}")
-
-
-def has_open(number, relation):
-    return any(issue["state"] == "open" for issue in dependencies(number, relation))
+def has_open(issue, relation):
+    # The issue list counts the open dependencies, which saves a call per issue.
+    return issue["issue_dependencies_summary"][relation] > 0
 
 
 def label_names(issue):
@@ -138,38 +135,43 @@ def trusted(issue, label):
     )
 
 
-def candidates(label):
-    issues = gh(f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}")
-    return [
-        summary(i)
+def open_issues():
+    issues = gh("repos/{owner}/{repo}/issues?state=open&per_page=100")
+    return sorted(
+        (i for i in issues if "pull_request" not in i), key=lambda i: i["number"]
+    )
+
+
+def candidates(label, issues):
+    """The startable issues, lowest number first; lazy, because a stranger's
+    issue costs calls for its label events."""
+    return (
+        i
         for i in issues
-        if "pull_request" not in i
+        if label in label_names(i)
         and not SKIPPED_LABELS & set(label_names(i))
+        and not has_open(i, "blocked_by")
         and trusted(i, label)
-        and not has_open(i["number"], "blocked_by")
-    ]
+    )
 
 
-def untriaged(label):
-    issues = gh("repos/{owner}/{repo}/issues?state=open")
+def untriaged(label, issues):
     excluded = STATUS_LABELS | {label}
     return [
         summary(i)
         for i in issues
-        if "pull_request" not in i
-        and i["author_association"] in TRUSTED
-        and not excluded & set(label_names(i))
+        if i["author_association"] in TRUSTED and not excluded & set(label_names(i))
     ]
 
 
 def priority(issue):
-    return not has_open(issue["number"], "blocking"), issue["number"]
+    return not has_open(issue, "blocking"), issue["number"]
 
 
 def next_issue(label):
-    issues = candidates(label)
+    issues = list(candidates(label, open_issues()))
     if issues:
-        print_events([min(issues, key=priority)])
+        print_events([summary(min(issues, key=priority))])
 
 
 def branch_head(branch):
@@ -185,27 +187,29 @@ def new_commit(branch, head):
     return [{"type": "commit", "branch": branch, "sha": current}]
 
 
-def answers(cursors):
-    since = min(since for _, since in cursors)
+def answers(number, since):
+    # Per issue, so an old cursor costs pages of that issue only.
     comments = gh(
-        f"repos/{{owner}}/{{repo}}/issues/comments?since={since}&per_page=100"
+        f"repos/{{owner}}/{{repo}}/issues/{number}/comments?since={since}&per_page=100"
     )
-    events = []
-    for number, since in cursors:
-        on_number = [
-            c for c in comments if c["issue_url"].endswith(f"/issues/{number}")
-        ]
-        events += maintainer_events(on_number, number, since)
-    return events
+    return maintainer_events(comments, number, since)
 
 
 def poll(targets):
-    cursors = [args for mode, *args in targets if mode == "answer"]
-    events = answers(cursors) if cursors else []
+    """The events of the targets. One startable issue is enough to wake the
+    orchestrator, so the search stops at the first."""
+    events = []
     for mode, *args in targets:
-        if mode == "new_issue":
-            events += [{"type": "labeled_issue", **i} for i in candidates(*args)]
-            events += [{"type": "untriaged_issue", **i} for i in untriaged(*args)]
+        if mode == "answer":
+            events += answers(*args)
+        elif mode == "new_issue":
+            (label,) = args
+            issues = open_issues()
+            if first := next(candidates(label, issues), None):
+                events.append({"type": "labeled_issue", **summary(first)})
+            events += [
+                {"type": "untriaged_issue", **i} for i in untriaged(label, issues)
+            ]
         elif mode == "patch":
             events += new_commit(*args)
     return events
@@ -260,7 +264,7 @@ def main(argv):
         case ["next", label]:
             next_issue(label)
         case ["untriaged", label]:
-            print_events(untriaged(label))
+            print_events(untriaged(label, open_issues()))
         case ["wait" | "check" as command, *args]:
             try:
                 targets = parse_targets(args)
