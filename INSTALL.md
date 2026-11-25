@@ -2,11 +2,17 @@
 
 Von einem frischen Linux-Host mit systemd zu einem laufenden Autopilot-Dienst für ein Projekt. Betrieb und Fehlersuche: [docs/autopilot.md](docs/autopilot.md).
 
-## 1. Benutzer und Werkzeuge (als root)
+## 1. Benutzer und Werkzeuge
+
+Als root:
 
 1. Einen Linux-Benutzer je Projekt anlegen und `loginctl enable-linger <benutzer>` ausführen, damit sein Dienst ohne Anmeldung läuft.
-2. Installieren: `claude` (mindestens 2.1.239), `git`, `gh`, `tmux`, `bun` (für das Telegram-Plugin) und `python3` (für die Skripte in `bin/`, `host/` und `hooks/`).
-3. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
+2. `git`, `gh`, `tmux` und `python3` (für die Skripte in `bin/`, `host/` und `hooks/`) installieren.
+
+Als Projekt-Benutzer:
+
+3. `claude` (mindestens 2.1.239) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`.
+4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
 
 `autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `tmux`, `bun`, die `gh`-Anmeldung, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
 
@@ -54,4 +60,4 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 
 ## Weiteres Projekt auf demselben Host
 
-Für jedes weitere Projekt alle Schritte mit einem eigenen Linux-Benutzer, eigenem Token und eigenem Telegram-Bot wiederholen; jeder Benutzer hat seinen eigenen Dienst ([Betrieb](docs/autopilot.md#betrieb)).
+Für jedes weitere Projekt als root einen eigenen Linux-Benutzer mit Linger anlegen (1.1), dann als dieser Benutzer `claude` und `bun` installieren (1.3) und alle weiteren Schritte mit eigenem Token und eigenem Telegram-Bot wiederholen; jeder Benutzer hat seinen eigenen Dienst ([Betrieb](docs/autopilot.md#betrieb)).
