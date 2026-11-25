@@ -556,14 +556,14 @@ class Autopilot:
             self.log("already merged")
             self.merge()
             return
+        if self.s["question"]:
+            # `weiter` after a blocked search.
+            self.search_answer(count=False)
         if step != "setprio":
             self.set_label(self.s["issue"], STEP_LABELS[step])
         counts = self.s["attempts_per_step"]
         counts[step] = counts.get(step, 0) + 1
         self.log("start")
-        if self.s["question"]:
-            # `weiter` after a blocked search.
-            self.search_answer(count=False)
         # Kept over reruns and restarts, so a commit never becomes the baseline.
         if step in CLEAN_STEPS and self.s["refs"] is None:
             self.s["refs"] = self.refs()
