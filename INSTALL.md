@@ -184,7 +184,7 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
    .claude/skills/pipeline/host/check-fork.sh
    ```
 
-2. Den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` schreiben und starten; ohne Argument mit dem Label `ready`, sonst mit `install-service.sh <label>`:
+2. Den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` schreiben und starten; der Autopilot nimmt Issues mit dem GitHub-Label `ready`; nur für ein anderes Auswahl-Label `install-service.sh <label>` aufrufen:
 
    ```
    .claude/skills/pipeline/host/install-service.sh
