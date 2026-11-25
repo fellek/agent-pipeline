@@ -32,7 +32,10 @@ Als Projekt-Benutzer (`sudo -iu autopilot`):
    curl -fsSL https://claude.ai/install.sh | bash -s "$v"
    curl -fsSL https://bun.sh/install | bash
    mkdir -p ~/.claude && echo '{"env": {"DISABLE_AUTOUPDATER": "1"}}' > ~/.claude/settings.json
+   export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
    ```
+
+   Die Installer tragen den `PATH` erst für neue Shells ein, die letzte Zeile gilt für die laufende. Ohne `bun` im `PATH` startet das Telegram-Plugin nicht.
 
 4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken, etwa `ln -s /pfad/zu/programm ~/.local/bin/`.
 
@@ -131,14 +134,17 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 ## 6. Telegram (als Projekt-Benutzer)
 
 1. Bei [@BotFather](https://t.me/BotFather) `/newbot` senden und den Token kopieren. Jedes Projekt braucht einen eigenen Bot.
-2. In `claude` das Plugin installieren (User-Scope; es installiert die Version, die der Marketplace gerade führt, `autopilot-start.sh` verlangt die aus `host/versions.sh`) und den Token eintragen. Er landet in `~/.claude/channels/telegram/.env`, nicht im Repository.
+2. Den Token in der Shell ablegen, nie in `claude` eintippen: dort stünde er im Transkript, und die Sandbox lässt `/telegram:configure` nicht nach `~/.claude/channels` schreiben. `read` wartet auf den Token (unsichtbare Eingabe):
+
+   ```
+   mkdir -p ~/.claude/channels/telegram
+   read -rs t && (umask 077; printf 'TELEGRAM_BOT_TOKEN=%s\n' "$t" > ~/.claude/channels/telegram/.env)
+   ```
+
+   Dann in `claude` das Plugin installieren (User-Scope; es installiert die Version, die der Marketplace gerade führt, `autopilot-start.sh` verlangt die aus `host/versions.sh`):
 
    ```
    /plugin install telegram@claude-plugins-official
-   ```
-
-   ```
-   /telegram:configure <token>
    ```
 
 3. Session beenden und mit dem Kanal neu starten:
