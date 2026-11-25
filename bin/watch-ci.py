@@ -21,10 +21,6 @@ INTERVAL_SECONDS = 30
 DEADLINE_SECONDS = 45 * 60
 
 
-class Timeout(Exception):
-    pass
-
-
 def list_runs(workflow, branch, sha, *extra):
     return json.loads(
         subprocess.run(
@@ -59,15 +55,12 @@ def find_run(branch, sha):
 
 
 def result_of(run, deadline):
-    try:
-        watched = subprocess.run(
-            ["gh", "run", "watch", str(run["databaseId"]), "--exit-status"],
-            stdout=subprocess.DEVNULL,
-            check=False,
-            timeout=max(0, deadline - time.monotonic()),
-        )
-    except subprocess.TimeoutExpired as error:
-        raise Timeout from error
+    watched = subprocess.run(
+        ["gh", "run", "watch", str(run["databaseId"]), "--exit-status"],
+        stdout=subprocess.DEVNULL,
+        check=False,
+        timeout=max(0, deadline - time.monotonic()),
+    )
     return "green" if watched.returncode == 0 else f"red {run['url']}"
 
 
@@ -82,7 +75,7 @@ def watch(branch, sha):
             return result
         integration = list_runs("Integration", branch, sha, "--event", "pull_request")
         return result_of(integration[0], deadline) if integration else result
-    except Timeout:
+    except subprocess.TimeoutExpired:
         return "timeout"
 
 
