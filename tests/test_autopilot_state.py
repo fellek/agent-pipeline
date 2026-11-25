@@ -522,7 +522,7 @@ def test_approve_starts_the_ci_wait(pilot):
     assert actions == [
         {
             "background": "autopilot-task.py step sh -c 'watch-ci.py "
-            f"issue-7-fix-the-thing {sha} && agent-review.py sync 5 {sha}'",
+            f"issue-7-fix-the-thing {sha} && agent-review.py await 5 {sha}'",
             "timeout": pilot.module.BACKGROUND_MS,
         }
     ]

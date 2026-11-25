@@ -15,6 +15,7 @@ COPIED = (
     ".github/workflows/agent-review.yml",
     ".github/workflows/agent-review-sync.yml",
     ".github/workflows/agent-review-audit.yml",
+    ".github/workflows/ci.yml",
 )
 
 
