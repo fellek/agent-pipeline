@@ -21,7 +21,7 @@ url=${url%/}
 repo=${url#https://github.com/}
 newest=$(gh release list --repo "$repo" "${filter[@]}" --limit 1 --json tagName --jq '.[0].tagName // ""') \
   || fail "listing the releases of $repo failed"
-[ -n "$newest" ] || fail "$repo has no release"
+[ -n "$newest" ] || fail "$repo has no ${filter[1]:+stable }release${filter[1]:+, --pre takes pre-releases}"
 
 default=$("$host/../bin/default-branch.py")
 git fetch --quiet origin "$default"

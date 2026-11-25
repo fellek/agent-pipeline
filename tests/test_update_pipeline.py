@@ -18,7 +18,7 @@ def gh(tmp_path, monkeypatch):
         stubs / "gh",
         f"""printf '%s\\n' "$@" > {tmp_path}/gh_$1_$2
 case "$1 $2" in
-  "release list") cat {tmp_path}/newest ;;
+  "release list") cat {tmp_path}/releases 2>/dev/null || cat {tmp_path}/newest ;;
   "release view") echo "- Notes of $3" ;;
 esac""",
     )
@@ -135,7 +135,7 @@ def test_fails_without_release(project, gh):
     result = update(project[1])
 
     assert result.returncode == 1
-    assert "has no release" in result.stderr
+    assert "has no stable release, --pre takes pre-releases" in result.stderr
     assert gh_args(gh, "pr create") is None
 
 
@@ -167,7 +167,6 @@ def test_update_skips_pre_releases_unless_asked(project, gh):
     update(clone)
     stable = gh_args(gh, "release list")
     (gh / "gh_release_list").unlink()
-    git(clone, "branch", "-q", "-D", "bump-pipeline-v2")
     run(clone, script_path("update-pipeline.sh"), "--pre")
 
     assert "--exclude-pre-releases" in stable
@@ -179,9 +178,10 @@ def rollback(cwd):
 
 
 @pytest.mark.parametrize("own_repo", [False, True])
-def test_rollback_opens_the_pull_request_to_the_previous_release(request, own_repo):
+def test_rollback_opens_the_pull_request_to_the_release_before(request, own_repo):
     upstream, clone = request.getfixturevalue("own" if own_repo else "project")
     gh = request.getfixturevalue("gh")
+    (gh / "releases").write_text("v2\nv1\n")
     move_pin_on_origin(upstream, "v2", own=own_repo)
     git(clone, "pull", "-q")
 
@@ -190,13 +190,31 @@ def test_rollback_opens_the_pull_request_to_the_previous_release(request, own_re
     assert result.returncode == 0, result.stderr
     args = gh_args(gh, "pr create")
     assert args[args.index("--title") + 1] == "Bump pipeline to v1"
+    assert git(clone, "branch", "--list", "bump-pipeline-*") == ""
 
 
 def test_rollback_fails_without_an_earlier_release(project, gh):
     _, clone = project
+    (gh / "releases").write_text("v2\nv1\n")
 
     result = rollback(clone)
 
     assert result.returncode == 1
-    assert "no release before the current one" in result.stderr
+    assert "no release before v1" in result.stderr
     assert gh_args(gh, "pr create") is None
+
+
+def test_update_after_an_earlier_bump_to_the_same_release(project, gh):
+    upstream, clone = project
+    assert update(clone).returncode == 0
+    move_pin_on_origin(upstream, "v2", own=False)
+    git(clone, "pull", "-q")
+    (gh / "releases").write_text("v2\nv1\n")
+    assert rollback(clone).returncode == 0
+    move_pin_on_origin(upstream, "v1", own=False)
+    git(clone, "pull", "-q")
+    (gh / "releases").unlink()
+
+    result = update(clone)
+
+    assert result.returncode == 0, result.stderr

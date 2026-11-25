@@ -43,7 +43,7 @@ def run_start(tmp_path, app):
         stubs / "claude",
         f"""case "$1" in
   --version) echo "${{CLAUDE_VERSION:-{VERSIONS["claude_code"]}}} (Claude Code)" ;;
-  plugin) [ "$2" = validate ] && {{ echo "$3 ${{VALIDATE_OUT-ok}}"; exit "${{VALIDATE_EXIT-0}}"; }}
+  plugin) [ "$2" = validate ] && {{ echo "$3" > {tmp_path}/validated; printf '%s\n' "Validating $3" "  > ${{VALIDATE_OUT-ok}}" "Plugin directory checks" "  > README" "× Validation failed"; exit "${{VALIDATE_EXIT-0}}"; }}
     printf '%s\n' "${{PLUGINS:-$DEFAULT_PLUGINS}}" ;;
   *) echo "${{CLAUDE_CODE_EFFORT_LEVEL-unset}}" > {effort_level}
      echo "${{CLAUDE_CODE_RETRY_WATCHDOG-unset}}" > {watchdog}
@@ -346,7 +346,7 @@ def test_fails_with_message_when_plugin_list_fails(run_start):
         ),
         (
             {"VALIDATE_EXIT": "1", "VALIDATE_OUT": "bad manifest"},
-            "fails claude plugin validate:",
+            "fails claude plugin validate: bad manifest\n",
         ),
     ],
     ids=["release", "validate"],
@@ -362,5 +362,5 @@ def test_broken_release_stops_the_start_with_a_message(
 
 
 def test_validates_the_plugin_of_the_release(run_start, tmp_path):
-    run_start(env={"VALIDATE_EXIT": "1", "VALIDATE_OUT": "x"})
-    assert f"{tmp_path / 'plugin'} x" in (tmp_path / "telegram").read_text()
+    run_start()
+    assert (tmp_path / "validated").read_text() == f"{tmp_path / 'plugin'}\n"
