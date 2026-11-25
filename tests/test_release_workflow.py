@@ -27,3 +27,10 @@ def test_ci_and_release_notes_take_the_versions_of_the_host():
     )
     assert "$claude_code" in release and "$telegram_plugin" in release
     assert '--notes "$notes" --generate-notes' in release
+
+
+def test_upgrade_notes_come_before_the_tested_versions():
+    release = (WORKFLOWS / "release.yml").read_text()
+    assert "UPGRADE: ${{ inputs.notes }}" in release
+    line = '[ -z "$UPGRADE" ] || notes="$UPGRADE"$' + "'\\n\\n'" + '"$notes"'
+    assert line in release
