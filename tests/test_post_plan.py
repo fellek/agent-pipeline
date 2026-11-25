@@ -1,5 +1,4 @@
 import json
-import sys
 
 import pytest
 from conftest import load_script
@@ -46,10 +45,11 @@ class FakeIssue:
         return json.dumps({"html_url": f"https://c/{comment['id']}"})
 
 
-def plan(post, monkeypatch, capsys, issue, text):
+def plan(post, monkeypatch, capsys, issue, text, tmp_path):
     monkeypatch.setattr(post, "gh", issue.gh)
-    monkeypatch.setattr(sys, "stdin", type("S", (), {"read": lambda self: text})())
-    post.main(["7"])
+    path = tmp_path / "plan.md"
+    path.write_text(text)
+    post.main(["7", str(path)])
     return capsys.readouterr().out.strip()
 
 
@@ -57,23 +57,23 @@ def bodies(post, issue):
     return [c["body"] for c in issue.comments if c["body"].startswith(post.PLAN)]
 
 
-def test_first_run_posts_the_plan(post, gate, monkeypatch, capsys):
+def test_first_run_posts_the_plan(post, gate, monkeypatch, capsys, tmp_path):
     issue = FakeIssue(gate)
 
-    url = plan(post, monkeypatch, capsys, issue, "plan one")
+    url = plan(post, monkeypatch, capsys, issue, "plan one", tmp_path)
 
     assert url == "https://c/1"
     assert bodies(post, issue) == [f"{post.PLAN}\nplan one\n\n<!-- pipeline -->"]
 
 
-def test_rerun_leaves_one_plan_comment(post, gate, monkeypatch, capsys):
+def test_rerun_leaves_one_plan_comment(post, gate, monkeypatch, capsys, tmp_path):
     issue = FakeIssue(
         gate, [{"id": 1, "author_association": "OWNER", "body": "question"}]
     )
-    plan(post, monkeypatch, capsys, issue, "plan one")
+    plan(post, monkeypatch, capsys, issue, "plan one", tmp_path)
     issue.comments.append({"id": 3, "author_association": "OWNER", "body": "answer"})
 
-    url = plan(post, monkeypatch, capsys, issue, "plan two")
+    url = plan(post, monkeypatch, capsys, issue, "plan two", tmp_path)
 
     assert url == "https://c/2"
     assert bodies(post, issue) == [f"{post.PLAN}\nplan two\n\n<!-- pipeline -->"]
@@ -89,19 +89,19 @@ def test_rerun_leaves_one_plan_comment(post, gate, monkeypatch, capsys):
     ids=["stranger", "unmarked"],
 )
 def test_foreign_plan_comment_is_not_edited(
-    post, gate, monkeypatch, capsys, association, body
+    post, gate, monkeypatch, capsys, association, body, tmp_path
 ):
     issue = FakeIssue(
         gate, [{"id": 1, "author_association": association, "body": body}]
     )
 
-    plan(post, monkeypatch, capsys, issue, "plan")
+    plan(post, monkeypatch, capsys, issue, "plan", tmp_path)
 
     assert issue.comments[0]["body"] == body
     assert len(issue.comments) == 2
 
 
-@pytest.mark.parametrize("argv", [[], ["7", "8"], ["x"]])
+@pytest.mark.parametrize("argv", [[], ["7"], ["x", "p"], ["7", "p", "q"]])
 def test_rejects_bad_arguments(post, argv):
     with pytest.raises(SystemExit) as exit:
         post.main(argv)

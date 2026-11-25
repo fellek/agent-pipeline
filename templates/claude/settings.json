@@ -33,6 +33,7 @@
       "Bash(open-review-threads.py*)",
       "Bash(pipeline-metrics.py*)",
       "Bash(post-plan.py*)",
+      "Bash(cat > .pipeline/*)",
       "Bash(release-changed.sh*)",
       "Bash(.claude/skills/pipeline/host/update-pipeline.sh*)",
       "Bash(telegram-send.py*)",
