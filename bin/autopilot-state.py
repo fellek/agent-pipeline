@@ -111,8 +111,13 @@ PARKED_FIELDS = (
     "questions",
     "events_since",
     "question",
+    "failure",
 )
-RUNNING = ("step", "ci", "merge_ci")
+CI_DETAILS = {
+    "missing": "kein CI-Lauf gefunden",
+    "timeout": "CI nach 45 Minuten nicht fertig",
+}
+RUNNING = ("step", "review_ci", "ci", "merge_ci")
 # The longest background call: two CI waits of 45 minutes each.
 BACKGROUND_MS = 7_200_000
 DIRTY = "Ungesicherte Änderungen im Arbeitsbaum, cleanup sichert sie auf einem Branch"
@@ -402,6 +407,8 @@ class Autopilot:
         # A fork or task ends with the session: a CI wait starts again, a step reruns.
         if waiting in RUNNING:
             self.s["task_id"] = None
+        if waiting == "review_ci":
+            self.start_review_ci()
         if waiting == "ci":
             self.start_ci()
         if waiting == "merge_ci":
@@ -432,7 +439,9 @@ class Autopilot:
         elif task_id == self.s["task_id"] and self.s["waiting_for"] in RUNNING:
             self.s["task_id"] = None
             waiting, self.s["waiting_for"] = self.s["waiting_for"], None
-            if waiting == "ci":
+            if waiting == "review_ci":
+                self.on_review_ci()
+            elif waiting == "ci":
                 self.on_ci()
             elif waiting == "merge_ci":
                 self.after_merge_ci()
@@ -570,14 +579,12 @@ class Autopilot:
         counts = self.s["attempts_per_step"]
         counts[step] = counts.get(step, 0) + 1
         self.log("start")
+        if step == "review-issue":
+            self.start_review_ci()
         # Kept over reruns and restarts, so a commit never becomes the baseline.
         if step in CLEAN_STEPS and self.s["refs"] is None:
             self.s["refs"] = self.refs()
-        if step == "review-issue":
-            self.s["head"] = self.head_sha()
-            self.background(f"step gate review {self.s['pr']} {self.s['head']}")
-        else:
-            self.start_skill(step, answer, self.s["failure"] or "")
+        self.start_skill(step, answer, self.s["failure"] or "")
         self.s["waiting_for"] = "step"
         self.s["pending"] = "step"
         self.wait()
@@ -674,8 +681,10 @@ class Autopilot:
                 ".[0].number",
             )
             self.s["pr"] = int(pr) if pr else None
-            self.change_step("review-issue")
-        elif step == "fix-review":
+        if step in ("issue", "fix-review"):
+            if not self.s["pr"]:
+                self.failure("Kein Pull Request zum Branch", hold)
+                return
             self.change_step("review-issue")
         elif step == "review-issue":
             verdict = result.get("VERDICT", "")
@@ -692,9 +701,11 @@ class Autopilot:
         if not hold:
             self.run_step()
 
-    def changes_requested(self, summary, answer, hold):
+    def changes_requested(self, summary, answer, hold, failure=None):
         self.s["review_rounds"] += 1
         self.change_step("fix-review")
+        # Kept in a parked entry, unlike the answer.
+        self.s["failure"] = failure
         rounds = self.s["review_rounds"]
         if rounds >= REVIEW_LIMIT_ROUNDS:
             self.send(
@@ -846,6 +857,37 @@ class Autopilot:
             return
         self.start_ci()
 
+    def start_review_ci(self):
+        """The first part of review-issue, so a red run costs no review."""
+        self.s["head"] = self.head_sha()
+        self.background(f"step watch-ci.py {self.s['branch']} {self.s['head']}")
+        self.s["waiting_for"] = "review_ci"
+        self.s["pending"] = "step"
+        self.wait()
+
+    def on_review_ci(self):
+        hold = self.s["paused"] or self.s["park"]
+        out = self.task_file("step", ".out") or ""
+        last = out.splitlines()[-1] if out else ""
+        if self.task_file("step", ".exit") == "0" and last == "green":
+            if not hold:
+                # Only now: a red run goes to fix-review, which commits.
+                if self.s["refs"] is None:
+                    self.s["refs"] = self.refs()
+                self.background(f"step gate review {self.s['pr']} {self.s['head']}")
+                self.s["waiting_for"] = "step"
+                self.s["pending"] = "step"
+                self.wait()
+        elif last.startswith("red "):
+            url = last.removeprefix("red ")
+            run = re.search(r"/runs/(\d+)", url)
+            log = f"gh run view {run.group(1)} --log-failed" if run else url
+            summary = f"CI rot: {url} (Log: {log})"
+            self.changes_requested(url, "", hold, failure=summary)
+        else:
+            self.failure(CI_DETAILS.get(last, out or "CI ohne Ergebnis"), hold)
+        self.after_hold(hold)
+
     def start_ci(self):
         self.s["head"] = self.head_sha()
         branch, pr, sha = self.s["branch"], self.s["pr"], self.s["head"]
@@ -922,10 +964,7 @@ class Autopilot:
         paused = self.s["paused"]
         if red:
             last = out.splitlines()[-1]
-            detail = {
-                "missing": "kein CI-Lauf gefunden",
-                "timeout": "CI nach 45 Minuten nicht fertig",
-            }.get(last, last.removeprefix("red "))
+            detail = CI_DETAILS.get(last, last.removeprefix("red "))
         # Commands that can fail first: a repeated event must not record twice.
         state = self.ok(
             "gh", "issue", "view", str(n), "--json", "state", "--jq", ".state"

@@ -66,6 +66,6 @@ These apply to commits, PRs, issues, comments and docs, and override any attribu
 - Always check existing review comments.
 - If you are asked to change something, commit to the original PR branch and push to it.
 - Review in a fresh session, never in the session that wrote the code.
-- Run all checks listed in `.claude/rules/project.md` on the PR branch as part of the review. A review by the gate runs no commands; it judges the checks by the CI runs of the head commit.
+- A review runs no commands; it judges the checks by the CI runs of the head commit, which the autopilot lets pass before the review starts.
 - Check the diff against the acceptance criteria of the issue, the pipeline rules and the project rules.
 - Post each finding as an inline review comment: what, why, suggested fix. Start the review summary with `Verdict: approve` or `Verdict: changes requested`.
