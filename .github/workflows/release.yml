@@ -17,8 +17,14 @@ permissions:
   contents: read
 
 jobs:
+  # Fails instead of skipping, so a run from another ref does not look like a release.
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "$GITHUB_REF" = refs/heads/main ] || { echo "release only from main, not $GITHUB_REF" >&2; exit 1; }'
+
   checks:
-    if: github.ref == 'refs/heads/main'
+    needs: main
     uses: ./.github/workflows/ci.yml
 
   release:

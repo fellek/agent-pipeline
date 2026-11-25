@@ -7,6 +7,8 @@ def test_release_runs_ci_checks_first():
     release = (WORKFLOWS / "release.yml").read_text()
     assert "uses: ./.github/workflows/ci.yml" in release
     assert "needs: checks" in release
+    assert "needs: main" in release
+    assert '[ "$GITHUB_REF" = refs/heads/main ]' in release
     assert "\n  workflow_call:\n" in (WORKFLOWS / "ci.yml").read_text()
 
 
