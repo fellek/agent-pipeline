@@ -10,6 +10,11 @@ def unit_settings(path):
     )
 
 
+def units_of(name):
+    suffixes = (".service", "-alert.service", "-watchdog.service", "-watchdog.timer")
+    return {name + suffix for suffix in suffixes}
+
+
 @pytest.fixture
 def install(tmp_path):
     host = tmp_path / "plugin" / "host"
@@ -18,6 +23,9 @@ def install(tmp_path):
         "install-service.sh",
         "autopilot-name.sh",
         "autopilot.service",
+        "autopilot-alert.service",
+        "autopilot-watchdog.service",
+        "autopilot-watchdog.timer",
         "require-project-root.sh",
     )
     stubs = tmp_path / "bin"
@@ -102,8 +110,8 @@ def test_two_instances_for_different_users(install, tmp_path):
     _, alice_units = install.run(first, user="alice")
     _, bob_units = install.run(second, user="bob")
 
-    assert [p.name for p in alice_units.iterdir()] == ["autopilot-app.service"]
-    assert [p.name for p in bob_units.iterdir()] == ["autopilot-site.service"]
+    assert {p.name for p in alice_units.iterdir()} == units_of("autopilot-app")
+    assert {p.name for p in bob_units.iterdir()} == units_of("autopilot-site")
     assert unit_settings(alice_units / "autopilot-app.service")[
         "WorkingDirectory"
     ] == str(first)
@@ -137,7 +145,7 @@ def test_replaces_old_unit_and_session_of_project(install, tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert not unit.exists()
-    assert [p.name for p in units.iterdir()] == ["autopilot-app.service"]
+    assert "autopilot.service" not in [p.name for p in units.iterdir()]
     assert install.calls()[0] == "--user disable --now autopilot.service"
     assert install.tmux_calls() == ["kill-session -t =autopilot"]
     assert "replaced autopilot.service" in result.stdout
@@ -173,3 +181,19 @@ def test_reinstall_in_same_project_replaces_unit(install, app):
     assert result.returncode == 0, result.stderr
     exec_start = unit_settings(units / "autopilot-app.service")["ExecStart"]
     assert exec_start.endswith("autopilot-service.sh batch-1")
+
+
+def test_installs_failure_alert_and_watchdog(install, app):
+    result, units = install.run(app)
+    assert result.returncode == 0, result.stderr
+    service = unit_settings(units / "autopilot-app.service")
+    assert service["OnFailure"] == "autopilot-app-alert.service"
+    alert = unit_settings(units / "autopilot-app-alert.service")
+    assert alert["ExecStart"] == f"{install.host_dir}/autopilot-watchdog.py failed"
+    assert alert["WorkingDirectory"] == str(app)
+    watchdog = unit_settings(units / "autopilot-app-watchdog.service")
+    assert watchdog["ExecStart"] == f"{install.host_dir}/autopilot-watchdog.py check"
+    assert unit_settings(units / "autopilot-app-watchdog.timer")["OnUnitActiveSec"]
+    assert "--user enable --now autopilot-app-watchdog.timer" in install.calls()
+    for path in units.iterdir():
+        assert "@" not in path.read_text().replace("%h", ""), path

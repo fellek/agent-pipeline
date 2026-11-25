@@ -1,0 +1,8 @@
+[Unit]
+Description=Report a failure of the autopilot "@NAME@" via Telegram
+
+[Service]
+Type=oneshot
+WorkingDirectory=@PROJECT@
+Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@HOST@/autopilot-watchdog.py failed

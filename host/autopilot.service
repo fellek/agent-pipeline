@@ -1,5 +1,6 @@
 [Unit]
 Description=Claude Code autopilot in tmux session "@NAME@"
+OnFailure=@NAME@-alert.service
 
 [Service]
 Type=simple

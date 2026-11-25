@@ -1811,3 +1811,58 @@ def test_task_command_resume_gets_a_new_budget(pilot):
     }
     message(pilot, "/fix-review 4")
     assert pilot.state["fork_runs"] == 1
+
+
+# Usage and metrics
+
+
+def test_done_counts_the_usage_of_the_step_fork(pilot):
+    at_step(pilot, "issue")
+    for _ in range(2):
+        pilot.event("done", "t1", "1500", "61000", text=result("blocked"))
+        pilot.event("started", "t1")
+
+    assert pilot.state["usage"] == {
+        "issue": {"forks": 2, "tokens": 3000, "duration_s": 122}
+    }
+
+
+def test_done_of_find_answer_counts_under_its_own_name(pilot):
+    at_step(pilot, "plan-issue", question=QUESTION)
+    pilot.event("done", "t1", "800", "30000", text=result(answer="none"))
+    assert pilot.state["usage"]["find-answer"] == {
+        "forks": 1,
+        "tokens": 800,
+        "duration_s": 30,
+    }
+
+
+def test_done_without_usage_counts_nothing(pilot):
+    at_step(pilot, "issue")
+    finish(pilot, result("blocked"))
+    assert pilot.state["usage"] == {}
+
+
+def test_park_records_metrics_and_keeps_the_usage(pilot):
+    at_step(pilot, "issue", attempts=2, usage={"issue": {"forks": 2}})
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, result("blocked", summary="broken"))
+    assert ("pipeline-metrics.py", "park", "Fehlversuche") in pilot.calls
+    assert pilot.state["parked"][0]["usage"] == {"issue": {"forks": 2}}
+
+
+def test_park_reports_failed_metrics(pilot):
+    at_step(pilot, "issue", attempts=2)
+    pilot.result("autopilot-poll.py", "next", out="")
+    pilot.result("pipeline-metrics.py", "park", code=1, err="disk full")
+    finish(pilot, result("blocked", summary="broken"))
+    assert "#7 Kennzahlen nicht erfasst: disk full" in pilot.texts()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["done", "t1", "12"], ["done", "t1", "x", "1"], ["started", "t1", "1", "2"]],
+)
+def test_main_rejects_wrong_usage_arguments(pilot, args):
+    with pytest.raises(SystemExit):
+        pilot.module.main(["event", *args])

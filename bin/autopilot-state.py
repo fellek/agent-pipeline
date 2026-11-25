@@ -11,7 +11,9 @@ Events:
   start [<label>]        the skill was invoked (default label: ready)
   telegram <chat_id>     a message of the maintainer, its text on stdin
   started <task_id>      the fork or background task of the last action started
-  done <task_id>         a fork or background task ended; a fork's result on stdin
+  done <task_id> [<tokens> <duration_ms>]
+                         a fork or background task ended; a fork's result on
+                         stdin, its usage from the task notification
   stopped <task_id>      the task of a `stop` action was stopped
 
 Actions, one JSON object per line:
@@ -81,6 +83,8 @@ ISSUE_FIELDS = {
     "fork_runs": 0,
     # The answer for the step that the daily budget held back.
     "held_answer": None,
+    # Forks, tokens and seconds per step, for pipeline-metrics.py.
+    "usage": {},
     "questions": 0,
     "failure": None,
     "task_id": None,
@@ -118,6 +122,7 @@ PARKED_FIELDS = (
     "sync_rounds",
     "attempts_per_step",
     "fork_runs",
+    "usage",
     "questions",
     "events_since",
     "question",
@@ -403,7 +408,7 @@ class Autopilot:
         elif event == "started":
             self.on_started(args[0])
         elif event == "done":
-            self.on_done(args[0], text)
+            self.on_done(args[0], text, args[1:])
         elif event == "stopped":
             self.on_stopped(args[0])
         else:
@@ -446,7 +451,9 @@ class Autopilot:
             self.s["task_id"] = task_id
         self.wait()
 
-    def on_done(self, task_id, text):
+    def on_done(self, task_id, text, usage=()):
+        if usage and task_id == self.s["task_id"] and self.s["waiting_for"] == "step":
+            self.count_usage(*usage)
         if task_id == self.s["poller"]:
             self.s["poller"] = None
             self.on_poll_exit()
@@ -465,6 +472,15 @@ class Autopilot:
                 self.on_result(parse_result(text))
         # Any other end is a stopped fork or poller.
         self.wait()
+
+    def count_usage(self, tokens, duration_ms):
+        step = "find-answer" if self.s["question"] else self.s["step"]
+        counts = self.s["usage"].setdefault(
+            step, {"forks": 0, "tokens": 0, "duration_s": 0}
+        )
+        counts["forks"] += 1
+        counts["tokens"] += int(tokens)
+        counts["duration_s"] += int(duration_ms) // 1000
 
     def on_stopped(self, task_id):
         if task_id == self.s["task_id"] and self.s["waiting_for"] in RUNNING:
@@ -1097,6 +1113,9 @@ class Autopilot:
             reason=reason,
         )
         self.log(f"park {reason}")
+        code, _, err = self.run("pipeline-metrics.py", "park", reason)
+        if code != 0:
+            self.send(f"#{n} Kennzahlen nicht erfasst: {err}")
         self.s["parked"].append(entry)
         self.reset(keep_paused=True)
         if reason not in ("Rückfrage", "Patch", "Budget"):
@@ -1435,7 +1454,15 @@ def main(argv):
             "event",
             ("start" | "telegram" | "started" | "done" | "stopped") as event,
             *args,
-        ] if (event == "start" and len(args) <= 1) or len(args) == 1:
+        ] if (
+            (event == "start" and len(args) <= 1)
+            or len(args) == 1
+            or (
+                event == "done"
+                and len(args) == 3
+                and all(a.isdigit() for a in args[1:])
+            )
+        ):
             text = sys.stdin.read() if event in ("telegram", "done") else ""
             autopilot = Autopilot(load())
             autopilot.handle(event, args, text)
