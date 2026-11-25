@@ -4,7 +4,7 @@ argument-hint: <issue-number> [maintainer-answer] [failure-summary]
 context: fork
 agent: pipeline:reviewer
 background: true
-model: opus
+model: sonnet
 effort: medium
 ---
 
@@ -26,3 +26,4 @@ If set, check that cause first and do not repeat the same approach; do not post 
    - `done` if it is a bug or an improvement that makes the project better and the Definition of Ready is met.
    - `needs_input` if it is an exception to a rule or makes the project more complicated: `OPEN_QUESTIONS` holds the reasoning and a proposal how to simplify or generalize the rule.
    - `needs_input` if the Definition of Ready is not met: `OPEN_QUESTIONS` holds the numbered questions.
+   - With `done`, add `PLAN: skip` if the change is small and its place is obvious, so it needs no plan (e.g. a typo or a one-line fix), else `PLAN: needed`.

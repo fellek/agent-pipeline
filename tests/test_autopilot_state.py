@@ -1472,3 +1472,17 @@ def test_restart_with_a_pending_park_checks_the_refs(pilot):
     assert not pilot.ran("leave-branch.py")
     assert pilot.texts()[0].startswith("#7 plan-issue blockiert")
     assert pilot.state["paused"] is True
+
+
+def test_setprio_without_need_for_a_plan_skips_plan_issue(pilot):
+    at_step(pilot, "setprio", branch=None, pr=None, issue=7)
+    actions = finish(pilot, result(plan="skip"))
+    assert pilot.state["step"] == "issue"
+    assert pilot.state["plan_skip"] == []
+    assert actions[0]["skill"] == "pipeline:issue"
+
+
+def test_setprio_with_need_for_a_plan_plans(pilot):
+    at_step(pilot, "setprio", branch=None, pr=None, issue=7)
+    actions = finish(pilot, result(plan="needed"))
+    assert actions[0]["skill"] == "pipeline:plan-issue"
