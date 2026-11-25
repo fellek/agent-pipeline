@@ -23,6 +23,7 @@ Targets:
   patch <branch> <head-sha>
 """
 
+import functools
 import json
 import subprocess
 import sys
@@ -59,7 +60,14 @@ def github_now():
     raise RuntimeError("GitHub response has no Date header")
 
 
-def owner_events(items, number, since):
+@functools.cache
+def maintainer():
+    """The login of the token: the maintainer, in an organization a MEMBER."""
+    return gh_api("user", "--jq", ".login").strip()
+
+
+def maintainer_events(items, number, since):
+    # Comments of the pipeline carry the gate's marker; they are no answers.
     return [
         {
             "type": "comment",
@@ -69,7 +77,9 @@ def owner_events(items, number, since):
             "body": item["body"],
         }
         for item in items
-        if item["author_association"] == "OWNER" and item["created_at"] > since
+        if item["user"]["login"] == maintainer()
+        and trust.MARKER not in item["body"]
+        and item["created_at"] > since
     ]
 
 
@@ -185,7 +195,7 @@ def answers(cursors):
         on_number = [
             c for c in comments if c["issue_url"].endswith(f"/issues/{number}")
         ]
-        events += owner_events(on_number, number, since)
+        events += maintainer_events(on_number, number, since)
     return events
 
 

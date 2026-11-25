@@ -395,10 +395,68 @@ def api_problem(args, repo):
     return f"gh api {method} {path} is not allowed through the gate"
 
 
+COMMENT_PATHS = re.compile(r"repos/[^/]+/[^/]+/issues/(\d+/comments|comments/\d+)")
+
+
+# The flags of the commands that post an issue comment.
+COMMENT_FLAGS = {
+    ("issue", "comment"): ("-b", "--body", "-F", "--body-file"),
+    ("pr", "comment"): ("-b", "--body", "-F", "--body-file"),
+    ("issue", "close"): ("-c", "--comment"),
+    ("issue", "reopen"): ("-c", "--comment"),
+    ("pr", "close"): ("-c", "--comment"),
+}
+
+
+def marked(text):
+    return f"{text}\n\n{trust.MARKER}"
+
+
+def mark_comment(args, stdin):
+    """The arguments and stdin of `gh <args>` with the marker in a comment body."""
+    args = list(args)
+    flags = COMMENT_FLAGS.get(tuple(args[:2]), ())
+    for i, arg in enumerate(args):
+        name, eq, value = arg.partition("=")
+        if name not in flags:
+            continue
+        if name in ("-F", "--body-file"):
+            return args, marked(stdin())
+        if eq:
+            args[i] = f"{name}={marked(value)}"
+        else:
+            args[i + 1] = marked(args[i + 1])
+    if args[:1] == ["api"] and any(
+        COMMENT_PATHS.fullmatch(a.lstrip("/").partition("?")[0]) for a in args
+    ):
+        for i, arg in enumerate(args):
+            name, eq, value = arg.partition("=")
+            if name == "--input":
+                body = json.loads(stdin())
+                if "body" in body:
+                    body["body"] = marked(body["body"])
+                return args, json.dumps(body)
+            if name not in ("-f", "-F", "--field", "--raw-field"):
+                continue
+            if eq and value.startswith("body="):
+                args[i] = f"{name}={marked(value)}"
+            elif not eq and args[i + 1].startswith("body="):
+                args[i + 1] = marked(args[i + 1])
+    return args, None
+
+
 def run_gh(project, args):
     if problem := gh_problem(args, project.repo):
         raise Refused(problem)
-    os.execvpe("gh", ["gh", *args], {**os.environ, **project.env()})
+    args, stdin = mark_comment(args, sys.stdin.read)
+    env = {**os.environ, **project.env()}
+    if stdin is None:
+        os.execvpe("gh", ["gh", *args], env)
+    else:
+        done = subprocess.run(
+            ["gh", *args], input=stdin, text=True, env=env, check=False
+        )
+        sys.exit(done.returncode)
 
 
 # review and merge
