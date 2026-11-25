@@ -18,6 +18,9 @@ Commands:
                                         an attestation; prints the result block
   review --manual <user> <pr> <sha> approve|changes-requested
                                         only for root: the maintainer's verdict
+  carry <pr> <sha>                      approve sha without a review if it only
+                                        merges the default branch into an approved
+                                        head, touching no file of the pull request
   merge <pr> <sha>                      squash merge after checking every gate
 """
 
@@ -798,6 +801,53 @@ def review(project, pr, sha):
     )
 
 
+def carry(project, pr, sha):
+    pull = pull_request(project, pr, sha)
+    refresh_mirror(project)
+
+    def git(*args):
+        result = project.run(
+            "git", "-C", str(project.mirror), *args, capture_output=True, text=True
+        )
+        return result.returncode, result.stdout.strip()
+
+    parents = git("rev-list", "--parents", "-n", "1", sha)[1].split()[1:]
+    if len(parents) != 2:
+        raise Refused(f"{sha} is not a merge commit")
+    approved, merged = parents
+    if (
+        attestation.latest_verdict(reviews(project, pr), project.key, pr, approved)
+        != attestation.APPROVE
+    ):
+        raise Refused(f"no attested approve on {approved}")
+    # Not the base of the pull request: the session can point it at its own branch.
+    default = project.gh_json("api", f"repos/{project.repo}")["default_branch"]
+    if pull["base"]["ref"] != default:
+        raise Refused(f"#{pr} targets {pull['base']['ref']}, not {default}")
+    if git("merge-base", "--is-ancestor", merged, f"refs/heads/{default}")[0] != 0:
+        raise Refused(f"{merged} is not on {default}")
+    # The tree of a clean merge, so a merge commit cannot carry changes of its own.
+    code, tree = git("merge-tree", "--write-tree", approved, merged)
+    if code != 0 or tree.split()[0] != git("rev-parse", f"{sha}^{{tree}}")[1]:
+        raise Refused(f"{sha} is not a clean merge of {approved} and {merged}")
+    base = git("merge-base", approved, merged)[1]
+    # Without renames, so an edit of the default branch cannot move into a renamed file.
+    ours = set(
+        git("diff", "--no-renames", "--name-only", "-z", base, approved)[1].split("\0")
+    )
+    theirs = set(
+        git("diff", "--no-renames", "--name-only", "-z", base, merged)[1].split("\0")
+    )
+    if both := sorted((ours & theirs) - {""}):
+        raise Refused(f"{default} changed files of the pull request: {' '.join(both)}")
+    text = (
+        f"Approve von {approved} übernommen: {sha} merged nur {default} ({merged}), "
+        "ohne Dateien des Pull Requests zu ändern."
+    )
+    body = review_body(attestation.APPROVE, text, pr, sha, "carry", project.key)
+    post_review(project, pr, sha, body, [])
+
+
 def manual_review(user, pr, sha, verdict):
     if caller() != 0:
         raise Refused("only root can post a manual verdict")
@@ -832,6 +882,8 @@ def main(argv):
                 manual_review(user, int(pr), sha, verdict)
             case ["review", pr, sha] if pr.isdecimal():
                 review(project_of_caller(), int(pr), sha)
+            case ["carry", pr, sha] if pr.isdecimal():
+                carry(project_of_caller(), int(pr), sha)
             case ["merge", pr, sha] if pr.isdecimal():
                 merge(project_of_caller(), int(pr), sha)
             case _:
