@@ -7,14 +7,14 @@ Von einem frischen Linux-Host mit systemd zu einem laufenden Autopilot-Dienst f�
 Als root:
 
 1. Einen Linux-Benutzer je Projekt anlegen und `loginctl enable-linger <benutzer>` ausführen, damit sein Dienst ohne Anmeldung läuft.
-2. `git`, `gh`, `tmux` und `python3` (für die Skripte in `bin/`, `host/` und `hooks/`) installieren.
+2. `git`, `gh`, `tmux`, `python3` (für die Skripte in `bin/`, `host/` und `hooks/`) sowie `bubblewrap` und `socat` (für die Bash-Sandbox) installieren. Unter Ubuntu ab 24.04 braucht `bwrap` bei `kernel.apparmor_restrict_unprivileged_userns = 1` ein AppArmor-Profil, siehe die Sandbox-Doku von Claude Code.
 
 Als Projekt-Benutzer:
 
 3. `claude` (mindestens 2.1.239) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`.
 4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
 
-`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `tmux`, `bun`, `python3`, die `gh`-Anmeldung, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
+`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, die `gh`-Anmeldung, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
 
 ## 2. GitHub (als Projekt-Benutzer)
 
@@ -38,7 +38,7 @@ Im Projektverzeichnis `claude` starten, `/login` ausführen und den Ordner als v
 Der Token hat kein Administration-Recht, deshalb von Hand:
 
 1. Settings, General: "Automatically delete head branches" einschalten.
-2. Settings, Rules, Rulesets: ein aktives Ruleset auf dem Default-Branch ohne Bypass-Liste mit "Require a pull request" (0 Approvals), "Require status checks" für die CI des Projekts und `agent-review` sowie blockierten Force-Pushes und Löschungen. Für dieses Repository heißen die Status-Checks `checks` und `agent-review`. Was `agent-review` prüft und was ohne durchgesetztes Ruleset gilt: [Merge und Review](docs/autopilot.md#merge-und-review).
+2. Settings, Rules, Rulesets: ein aktives Ruleset auf dem Default-Branch ohne Bypass-Liste mit "Require a pull request" (0 Approvals), "Require status checks" für die CI des Projekts und `agent-review` sowie blockierten Force-Pushes und Löschungen. Für dieses Repository heißen die Status-Checks `checks` und `agent-review`. `autopilot-start.sh` startet in einem öffentlichen Repository nicht, solange eine dieser Regeln fehlt; in einem privaten warnt es nur per Telegram, da GitHub das Ruleset dort ohne passenden Plan nicht durchsetzt. Was `agent-review` prüft und was ohne durchgesetztes Ruleset gilt: [Merge und Review](docs/autopilot.md#merge-und-review).
 
 ## 6. Telegram (als Projekt-Benutzer)
 

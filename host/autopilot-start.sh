@@ -25,13 +25,20 @@ fi
 
 [ $# -le 1 ] && [[ $label =~ ^[^[:space:]]+$ ]] || fail "label must not contain whitespace"
 
-for cmd in claude git gh tmux bun python3; do
+# bwrap and socat run the Bash sandbox of .claude/settings.json.
+for cmd in claude git gh tmux bun python3 bwrap socat; do
   command -v "$cmd" >/dev/null || fail "$cmd is missing"
 done
 claude_version=$(claude --version | cut -d' ' -f1)
 [ "$(printf '%s\n' "$min_claude" "$claude_version" | sort -V | head -1)" = "$min_claude" ] \
   || fail "claude $claude_version is older than $min_claude"
 gh auth status >/dev/null 2>&1 || fail "gh is not logged in"
+default=$("${host%/host}/bin/default-branch.py") || fail "the default branch is unknown"
+warning=$("$host/check-ruleset.py" "$default" 2>&1) || fail "$warning"
+if [ -n "$warning" ]; then
+  echo "$session: $warning" >&2
+  printf '%s\n' "$warning" | "${host%/host}/bin/telegram-send.py" || true
+fi
 claude plugin list | grep -q telegram || fail "Telegram plugin is not installed"
 [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || [ -f "$HOME/.claude/channels/telegram/.env" ] \
   || fail "Telegram token is missing"

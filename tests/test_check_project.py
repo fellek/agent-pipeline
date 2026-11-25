@@ -297,3 +297,53 @@ def test_accepts_missing_checks(app, project_md):
         path.write_text(project_md)
 
     assert check(app).returncode == 0
+
+
+SANDBOX_SWITCHES = {
+    key: value
+    for key, value in json.loads((TEMPLATES / "claude" / "settings.json").read_text())[
+        "sandbox"
+    ].items()
+    if isinstance(value, bool)
+}
+
+
+def test_template_enables_the_sandbox_without_escape():
+    assert SANDBOX_SWITCHES == {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "autoAllowBashIfSandboxed": False,
+        "allowUnsandboxedCommands": False,
+    }
+
+
+@pytest.mark.parametrize("key", SANDBOX_SWITCHES)
+def test_fails_for_a_changed_sandbox_switch(app, key):
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["sandbox"][key] = not data["sandbox"][key]
+    settings.write_text(json.dumps(data))
+
+    result = check(app)
+
+    assert result.returncode == 1
+    expected = json.dumps(SANDBOX_SWITCHES[key])
+    assert (
+        result.stderr.strip()
+        == f".claude/settings.json lacks sandbox.{key}: {expected}"
+    )
+
+
+def test_fails_without_sandbox(app):
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    del data["sandbox"]
+    settings.write_text(json.dumps(data))
+
+    assert len(check(app).stderr.strip().splitlines()) == len(SANDBOX_SWITCHES)
+
+
+def test_template_runs_the_pipeline_commands_outside_the_sandbox():
+    settings = json.loads((TEMPLATES / "claude" / "settings.json").read_text())
+    allow = [r[5:-1] for r in settings["permissions"]["allow"] if r.startswith("Bash(")]
+    assert settings["sandbox"]["excludedCommands"] == allow

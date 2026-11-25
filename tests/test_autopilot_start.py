@@ -34,7 +34,16 @@ def run_start(tmp_path, app):
 esac""",
     )
     write_executable(stubs / "loginctl", "echo yes")
-    for cmd in ("gh", "bun"):
+    plugin_bin = tmp_path / "plugin" / "bin"
+    plugin_bin.mkdir()
+    write_executable(plugin_bin / "default-branch.py", "echo main")
+    write_executable(
+        scripts / "check-ruleset.py",
+        'echo "$1" > "$RULESET_ARGS"; [ -z "${RULESET_OUT-}" ] || echo "$RULESET_OUT"'
+        "; exit ${RULESET_EXIT-0}",
+    )
+    write_executable(plugin_bin / "telegram-send.py", 'cat > "$TELEGRAM_OUT"')
+    for cmd in ("gh", "bun", "bwrap", "socat"):
         write_executable(stubs / cmd, "exit 0")
 
     def run(*args, env=None, cwd=app):
@@ -45,6 +54,8 @@ esac""",
             env={
                 "PATH": f"{stubs}:/usr/bin:/bin",
                 "TELEGRAM_BOT_TOKEN": "t",
+                "RULESET_ARGS": str(tmp_path / "ruleset_args"),
+                "TELEGRAM_OUT": str(tmp_path / "telegram"),
                 **(env or {}),
             },
             check=False,
@@ -173,3 +184,44 @@ def test_fails_without_python3_and_points_to_install(run_start, tmp_path):
     assert "python3 is missing" in result.stderr
     assert result.stderr.rstrip().endswith("/INSTALL.md")
     assert tmux_args == []
+
+
+def test_checks_ruleset_of_default_branch(run_start, tmp_path):
+    result, *_ = run_start()
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "ruleset_args").read_text() == "main\n"
+    assert not (tmp_path / "telegram").exists()
+
+
+def test_refuses_to_start_without_required_rules(run_start):
+    result, tmux_args, *_ = run_start(
+        env={
+            "RULESET_OUT": "the default branch main lacks the rules: x",
+            "RULESET_EXIT": "1",
+        }
+    )
+    assert result.returncode == 1
+    assert "lacks the rules: x" in result.stderr
+    assert tmux_args == []
+
+
+def test_warns_via_telegram_and_starts_when_rules_are_not_enforced(run_start, tmp_path):
+    warning = "Warning: the default branch main lacks the rules: x."
+    result, tmux_args, *_ = run_start(env={"RULESET_OUT": warning})
+    assert result.returncode == 0, result.stderr
+    assert warning in result.stderr
+    assert (tmp_path / "telegram").read_text() == warning + "\n"
+    assert tmux_args[-1] == "/pipeline:autopilot ready"
+
+
+@pytest.mark.parametrize("cmd", ["bwrap", "socat"])
+def test_fails_without_sandbox_tools(run_start, tmp_path, cmd):
+    (tmp_path / "bin" / cmd).unlink()
+    system = tmp_path / "system"
+    system.mkdir()
+    for path in Path("/usr/bin").iterdir():
+        if path.name != cmd:
+            (system / path.name).symlink_to(path)
+    result, *_ = run_start(env={"PATH": f"{tmp_path / 'bin'}:{system}"})
+    assert result.returncode == 1
+    assert f"{cmd} is missing" in result.stderr
