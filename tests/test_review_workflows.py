@@ -23,7 +23,7 @@ def test_the_review_key_reaches_only_code_of_the_base(path):
 def pins(folder):
     found = {}
     for path in (ROOT / folder).glob("*.yml"):
-        for action, ref in re.findall(r"uses: ([\w-]+/[\w-]+)@(\S+)", path.read_text()):
+        for action, ref in re.findall(r"uses: ([^.\s][^@\s]*)@(\S+)", path.read_text()):
             found.setdefault(action, set()).add(ref)
     return found
 
