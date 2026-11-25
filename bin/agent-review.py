@@ -11,7 +11,8 @@ Without `sync` or `audit` it fails unless the review is an approve; the
 
 `sync` brings the latest `agent-review` run of the `pull_request` event on the head
 commit in line with the verdict: it waits while the run is not completed and re-runs
-it if its result differs. Prints `green`, `red <run url>` or `missing`; exits 1
+it if its result differs. Prints `green`, `red <run url>`, `missing` or, after an
+overall deadline of 45 minutes, `timeout`; exits 1
 unless the run ends in line with the verdict, so a red run after a review without
 an approve is no failure.
 
@@ -37,6 +38,7 @@ APPROVE = "Verdict: approve"
 WORKFLOW = "agent-review.yml"
 ATTEMPTS = 10
 INTERVAL_SECONDS = 3
+DEADLINE_SECONDS = 45 * 60
 
 
 def gh_json(*args):
@@ -105,12 +107,15 @@ def latest_run(head_sha):
     return runs[0] if runs else None
 
 
-def wait(run):
-    """Wait until the run is completed and tell whether it succeeded."""
+def wait(run, deadline):
+    """Wait until the run is completed and tell whether it succeeded.
+
+    Raises subprocess.TimeoutExpired once the deadline has passed."""
     watched = subprocess.run(
         ["gh", "run", "watch", str(run["databaseId"]), "--exit-status"],
         stdout=subprocess.DEVNULL,
         check=False,
+        timeout=max(0, deadline - time.monotonic()),
     )
     return watched.returncode == 0
 
@@ -136,13 +141,17 @@ def rerun(run):
 
 
 def sync(pr, head_sha):
+    deadline = time.monotonic() + DEADLINE_SECONDS
     run = latest_run(head_sha)
     if run is None:
         return "missing", False
-    green = wait(run)
-    approve = approved(reviews(pr), pr, head_sha, review_key())
-    if green != approve:
-        green = rerun(run) and wait(run)
+    try:
+        green = wait(run, deadline)
+        approve = approved(reviews(pr), pr, head_sha, review_key())
+        if green != approve:
+            green = rerun(run) and wait(run, deadline)
+    except subprocess.TimeoutExpired:
+        return "timeout", False
     return ("green" if green else f"red {run['url']}"), green == approve
 
 
