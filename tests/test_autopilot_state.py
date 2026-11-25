@@ -1365,7 +1365,8 @@ def test_commit_or_push_in_a_read_only_step_is_blocked(pilot, moved, out):
         (
             (
                 "#7 plan-issue blockiert: Commit oder Push in einem lesenden Schritt "
-                "(oder ein Push auf issue-7-fix-the-thing), bitte prüfen, nach Behebung weiter"
+                "(oder ein Push auf issue-7-fix-the-thing), bitte prüfen; weiter setzt fort "
+                "und pusht beim Parken, was auf dem Branch liegt"
             ),
             ("status",),
         )
@@ -1462,3 +1463,12 @@ def test_repeated_merge_after_a_failure_does_not_merge_again(pilot):
     finish(pilot, out="green", code=0)
     assert not pilot.ran("gate", "merge")
     assert pilot.state["waiting_for"] == "merge_ci"
+
+
+def test_restart_with_a_pending_park_checks_the_refs(pilot):
+    at_step(pilot, "plan-issue", park="manuell", refs=["c" * 40, ""])
+    pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
+    assert pilot.event("start", "") == []
+    assert not pilot.ran("leave-branch.py")
+    assert pilot.texts()[0].startswith("#7 plan-issue blockiert")
+    assert pilot.state["paused"] is True

@@ -404,6 +404,7 @@ class Autopilot:
         if waiting in ("restart", "step"):
             self.s["waiting_for"] = None
             if self.s["park"]:
+                self.check_refs()
                 self.park(self.s["park"])
             if self.s["question"]:
                 self.search_answer(count=False)
@@ -604,7 +605,8 @@ class Autopilot:
         self.log("blocked commit or push")
         self.send(
             f"{self.prefix()}{step} blockiert: Commit oder Push in einem lesenden "
-            f"Schritt (oder ein Push auf {branch}), bitte prüfen, nach Behebung weiter",
+            f"Schritt (oder ein Push auf {branch}), bitte prüfen; weiter setzt fort "
+            "und pusht beim Parken, was auf dem Branch liegt",
             "status",
         )
         self.pause()
