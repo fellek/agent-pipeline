@@ -548,6 +548,11 @@ class Autopilot:
     def run_step(self, answer=""):
         """Loop step 4: start the step of the current issue."""
         step = self.s["step"]
+        # The session may have ended between the merge and the reset of the state.
+        if self.s["pr"] and self.merged():
+            self.log("already merged")
+            self.merge()
+            return
         if step != "setprio":
             self.set_label(self.s["issue"], STEP_LABELS[step])
         counts = self.s["attempts_per_step"]
@@ -793,11 +798,20 @@ class Autopilot:
                 self.merge()
         self.after_hold(hold)
 
+    def merged(self):
+        state = self.ok(
+            "gh", "pr", "view", str(self.s["pr"]), "--json", "state", "--jq", ".state"
+        )
+        return state == "MERGED"
+
     def merge(self):
-        code, out, err = self.run("gate", "merge", str(self.s["pr"]), self.s["head"])
-        if code != 0:
-            self.failure(err or out)
-            return
+        if not self.merged():
+            code, out, err = self.run(
+                "gate", "merge", str(self.s["pr"]), self.s["head"]
+            )
+            if code != 0:
+                self.failure(err or out)
+                return
         default = self.default_branch()
         self.ok("git", "switch", default)
         self.ok("git", "pull", "--ff-only")

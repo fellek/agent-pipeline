@@ -1351,3 +1351,33 @@ def test_retry_ends_when_the_issue_leaves_the_error_pause(pilot, command):
     pilot.result("autopilot-poll.py", "next", out="")
     message(pilot, command)
     assert pilot.state["retry"] is None
+
+
+def test_restart_with_a_merged_pull_request_finishes_the_merge(pilot):
+    at_step(pilot, "review-issue")
+    pilot.result("gh", "pr", "view", "5", "--json", "state", out="MERGED")
+    actions = pilot.event("start", "")
+    assert not pilot.ran("gate")
+    assert pilot.ran("git", "switch", "main")
+    assert pilot.state["merge"] == {"default": "main", "sha": "m" * 40}
+    assert actions == [
+        {
+            "background": f"autopilot-task.py step watch-ci.py main {'m' * 40}",
+            "timeout": pilot.module.BACKGROUND_MS,
+        }
+    ]
+    pilot.event("started", "t2")
+    pilot.result("autopilot-poll.py", "next", out="")
+    pilot.task("step", "green", code=0)
+    pilot.event("done", "t2")
+    assert pilot.ran("gh", "issue", "close", "7")
+    assert "#7 fertig: https://pr/5" in pilot.texts()
+    assert pilot.state["issue"] is None
+
+
+def test_repeated_merge_after_a_failure_does_not_merge_again(pilot):
+    at_ci(pilot)
+    pilot.result("gh", "pr", "view", "5", "--json", "state", out="MERGED")
+    finish(pilot, out="green", code=0)
+    assert not pilot.ran("gate", "merge")
+    assert pilot.state["waiting_for"] == "merge_ci"
