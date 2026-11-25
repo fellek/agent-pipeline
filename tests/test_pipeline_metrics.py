@@ -60,7 +60,7 @@ def test_record_appends_metrics_since_last_selection_label(
         f"{MERGED_AT} #69 merge metrics "
         '{"issue": 69, "pr": 98, "review_rounds": 2, '
         '"attempts": {"plan-issue": 1, "issue": 3}, '
-        '"questions": 1, "duration_s": 7200}'
+        '"questions": 1, "duration_s": 7200, "usage": {}}'
     )
 
 
@@ -70,7 +70,7 @@ def test_record_defaults_missing_state_fields(monkeypatch, tmp_path, metrics):
 
     log_path = record(tmp_path, metrics, old_state)
 
-    recorded = metrics.read_metrics(log_path)[0]
+    recorded = metrics.read_metrics(log_path)[0][0]
     assert recorded["attempts"] == {}
     assert recorded["questions"] == 0
     assert recorded["duration_s"] == 3600
@@ -81,7 +81,7 @@ def test_record_without_label_event_has_no_duration(monkeypatch, tmp_path, metri
 
     log_path = record(tmp_path, metrics, STATE)
 
-    assert metrics.read_metrics(log_path)[0]["duration_s"] is None
+    assert metrics.read_metrics(log_path)[0][0]["duration_s"] is None
 
 
 def log_line(issue, rounds, attempts, questions, duration):
@@ -111,7 +111,7 @@ def test_summary_aggregates_metrics_lines_only(tmp_path, metrics):
         + "\n"
     )
 
-    assert metrics.summarize(metrics.read_metrics(log_path)).splitlines() == [
+    assert metrics.summarize(*metrics.read_metrics(log_path)).splitlines() == [
         "3 Issues",
         "Review-Runden: Mittel 2.0, Max 4",
         "Versuche issue: Mittel 2.5",
@@ -127,7 +127,7 @@ def test_summary_without_metrics_lines(tmp_path, metrics, content):
     if content is not None:
         log_path.write_text(content)
 
-    assert metrics.summarize(metrics.read_metrics(log_path)) == "0 Issues"
+    assert metrics.summarize(*metrics.read_metrics(log_path)) == "0 Issues"
 
 
 @pytest.mark.parametrize("argv", [[], ["record", "extra"], ["unknown"]])
@@ -166,3 +166,56 @@ def test_summary_reads_log_of_project_root_from_subdirectory(
     metrics.main(["summary"])
 
     assert capsys.readouterr().out.startswith("1 Issues\n")
+
+
+def test_park_records_reason_and_usage(tmp_path, metrics):
+    state = {
+        **STATE,
+        "usage": {"issue": {"forks": 2, "tokens": 900, "duration_s": 60}},
+    }
+    (tmp_path / "state.json").write_text(json.dumps(state))
+    log_path = tmp_path / "autopilot.log"
+
+    metrics.park(tmp_path / "state.json", log_path, "Failure")
+
+    merged, parked = metrics.read_metrics(log_path)
+    assert merged == []
+    assert parked == [
+        {
+            "issue": 69,
+            "reason": "Failure",
+            "review_rounds": 2,
+            "attempts": {"plan-issue": 1, "issue": 3},
+            "questions": 1,
+            "usage": state["usage"],
+        }
+    ]
+
+
+def test_summary_shows_parked_issues_and_tokens_per_step(metrics):
+    usage = {"issue": {"forks": 1, "tokens": 1000, "duration_s": 60}}
+    merged = [
+        {
+            "review_rounds": 1,
+            "attempts": {},
+            "questions": 0,
+            "duration_s": None,
+            "usage": usage,
+        }
+    ]
+    parked = [
+        {"reason": "Failure", "usage": {"issue": {"tokens": 3000}}},
+        {"reason": "Failure", "usage": {}},
+        {"reason": "Rückfrage", "usage": {}},
+    ]
+
+    lines = metrics.summarize(merged, parked).splitlines()
+
+    assert "Geparkt: 3 (Failure 2, Rückfrage 1)" in lines
+    assert lines[-1] == "Tokens issue: Mittel 2000 je Issue"
+
+
+@pytest.mark.parametrize("argv", [["park"], ["park", "a", "b"]])
+def test_park_needs_one_reason(metrics, argv):
+    with pytest.raises(SystemExit):
+        metrics.main(argv)

@@ -51,7 +51,7 @@ Das [Gate](../host/gate.py) ([ADR 0050](decisions/0050-gate.md)) hält Token und
 | Als Dienst | `.claude/skills/pipeline/host/install-service.sh [label]` (gilt ab dem nächsten Start des Dienstes) |
 | Anhängen | `tmux attach -t autopilot-<Repository>` (lösen mit `Ctrl-b d`) |
 | Fork-Isolation prüfen | `.claude/skills/pipeline/host/check-fork.sh` |
-| Kennzahlen | `.claude/skills/pipeline/bin/pipeline-metrics.py summary` |
+| Kennzahlen (gemergte und geparkte Issues, Tokens je Schritt) | `.claude/skills/pipeline/bin/pipeline-metrics.py summary` |
 
 Die Session startet mit `--model sonnet --effort medium`; die Forks setzen Modell und Aufwand in ihrer Frontmatter. `CLAUDE_CODE_EFFORT_LEVEL` entfernt das Start-Skript, da es alle `effort`-Felder überschreibt. Steigen laut `pipeline-metrics.py` die Versuche bei `issue` oder die `review_rounds` deutlich, zuerst `issue` auf `opus`/`medium` zurückstellen.
 

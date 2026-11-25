@@ -37,7 +37,10 @@ if [ -f "$old_unit" ]; then
 fi
 
 mkdir -p "$unit_dir"
-sed -e "s|@NAME@|$unit|" -e "s|@PROJECT@|$PWD|" -e "s|@HOST@|$host|" -e "s|@LABEL@|$label|" \
-  "$host/autopilot.service" > "$new_unit"
+for suffix in .service -alert.service -watchdog.service -watchdog.timer; do
+  sed -e "s|@NAME@|$unit|" -e "s|@PROJECT@|$PWD|" -e "s|@HOST@|$host|" -e "s|@LABEL@|$label|" \
+    "$host/autopilot$suffix" > "$unit_dir/$unit$suffix"
+done
 systemctl --user daemon-reload
+systemctl --user enable --now "$unit-watchdog.timer"
 systemctl --user enable --now "$unit.service"

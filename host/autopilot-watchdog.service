@@ -1,0 +1,8 @@
+[Unit]
+Description=Check that the autopilot "@NAME@" is not stuck
+
+[Service]
+Type=oneshot
+WorkingDirectory=@PROJECT@
+Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@HOST@/autopilot-watchdog.py check
