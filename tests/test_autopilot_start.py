@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 from conftest import copy_scripts, project, write_executable
@@ -157,4 +158,18 @@ def test_refuses_session_of_other_project_with_same_name(run_start, tmp_path):
     )
     assert result.returncode == 1
     assert f"session autopilot-app runs {fork}" in result.stderr
+    assert tmux_args == []
+
+
+def test_fails_without_python3_and_points_to_install(run_start, tmp_path):
+    # python3 sits in /usr/bin next to the tools the script needs.
+    system = tmp_path / "system"
+    system.mkdir()
+    for path in Path("/usr/bin").iterdir():
+        if not path.name.startswith("python"):
+            (system / path.name).symlink_to(path)
+    result, tmux_args, *_ = run_start(env={"PATH": f"{tmp_path / 'bin'}:{system}"})
+    assert result.returncode == 1
+    assert "python3 is missing" in result.stderr
+    assert result.stderr.rstrip().endswith("/INSTALL.md")
     assert tmux_args == []

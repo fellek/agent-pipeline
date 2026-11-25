@@ -7,7 +7,7 @@ channel=plugin:telegram@claude-plugins-official
 min_claude=2.1.239
 label=${1:-ready}
 
-fail() { echo "$session: $*, see ${host%/host}/docs/autopilot.md" >&2; exit 1; }
+fail() { echo "$session: $*, see ${host%/host}/INSTALL.md" >&2; exit 1; }
 
 reason=$("$host/require-project-root.sh") || fail "$reason"
 
@@ -25,7 +25,7 @@ fi
 
 [ $# -le 1 ] && [[ $label =~ ^[^[:space:]]+$ ]] || fail "label must not contain whitespace"
 
-for cmd in claude git gh tmux bun; do
+for cmd in claude git gh tmux bun python3; do
   command -v "$cmd" >/dev/null || fail "$cmd is missing"
 done
 claude_version=$(claude --version | cut -d' ' -f1)
