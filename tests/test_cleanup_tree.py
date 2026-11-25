@@ -37,6 +37,20 @@ def test_returns_to_unchanged_original_branch(script, capsys, clone):
     assert git(clone, "status", "--porcelain") == ""
 
 
+def test_returns_to_the_original_commit_on_a_detached_head(script, capsys, clone):
+    head = commit(clone, "feature", "feature")
+    git(clone, "switch", "-q", "--detach", head)
+    (clone / "base").write_text("changed")
+
+    output, code = run_main(script, capsys, "7")
+
+    assert code == 0
+    assert git(clone, "branch", "--show-current") == ""
+    assert git(clone, "rev-parse", "HEAD") == head
+    assert git(clone, "status", "--porcelain") == ""
+    assert git(clone, "show", f"{output}:base") == "changed"
+
+
 def test_neither_pushes_nor_stashes(script, capsys, clone):
     (clone / "base").write_text("changed")
 

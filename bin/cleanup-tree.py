@@ -2,7 +2,7 @@
 """Commit a modified working tree onto a new cleanup branch, without pushing.
 
 Prints the name of the cleanup branch and switches back to the original
-branch, or prints `clean` (exit 1) if there is nothing to commit.
+branch or, on a detached HEAD, to the original commit, or prints `clean` (exit 1) if there is nothing to commit.
 
 Usage:
   cleanup-tree.py <issue>
@@ -23,12 +23,16 @@ def cleanup(issue):
     if not git("status", "--porcelain"):
         return None
     original = git("branch", "--show-current")
+    head = git("rev-parse", "HEAD")
     timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
     branch = f"cleanup/{issue}-{timestamp}"
     git("switch", "-c", branch)
     git("add", "-A")
     git("commit", "-m", f"Cleanup working tree of #{issue}")
-    git("switch", original)
+    if original:
+        git("switch", original)
+    else:
+        git("switch", "--detach", head)
     return branch
 
 
