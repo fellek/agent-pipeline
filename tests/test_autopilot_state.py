@@ -556,6 +556,7 @@ def test_green_ci_merges_and_waits_for_the_default_branch(pilot):
     actions = finish(pilot, out="green\ngreen", code=0)
     assert pilot.labels() == ["approved"]
     assert pilot.ran("gate", "merge", "5", "a" * 40)
+    assert pilot.ran("git", "fetch", "--prune", "origin")
     assert pilot.state["waiting_for"] == "merge_ci"
     assert pilot.state["merge"] == {"default": "main", "sha": "m" * 40}
     assert (
@@ -1895,3 +1896,92 @@ def test_park_reports_failed_metrics(pilot):
 def test_main_rejects_wrong_usage_arguments(pilot, args):
     with pytest.raises(SystemExit):
         pilot.module.main(["event", *args])
+
+
+# Prune
+
+
+def merged_prs(pilot, *prs):
+    pilot.result(
+        "gh",
+        "pr",
+        "list",
+        "--state",
+        "merged",
+        out=json.dumps([{"headRefName": n, "headRefOid": o} for n, o in prs]),
+    )
+
+
+def local_branches(pilot, *branches):
+    pilot.result("git", "for-each-ref", out="\n".join(f"{n} {o}" for n, o in branches))
+
+
+def deleted(pilot):
+    return [call[3:] for call in pilot.calls if call[:3] == ("git", "branch", "-D")]
+
+
+def test_prune_lists_only_branches_with_a_merged_pr(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    merged_prs(pilot, ("issue-1-a", "1" * 40), ("issue-2-b", "2" * 40))
+    local_branches(
+        pilot,
+        ("issue-1-a", "1" * 40),
+        ("issue-2-b", "9" * 40),
+        ("issue-3-c", "3" * 40),
+    )
+
+    message(pilot, "prune")
+
+    assert pilot.sent == [("Löschen? issue-1-a", ("prune ja", "status"))]
+    assert pilot.state["prune"] == ["issue-1-a"]
+    assert deleted(pilot) == []
+
+
+def test_prune_ja_deletes_the_listed_branches_still_merged(pilot):
+    pilot.state = {"waiting_for": "new_issue", "prune": ["issue-1-a", "issue-2-b"]}
+    local_branches(
+        pilot,
+        ("issue-1-a", "1" * 40),
+        ("issue-2-b", "8" * 40),
+        ("issue-4-d", "4" * 40),
+    )
+    merged_prs(
+        pilot,
+        ("issue-1-a", "1" * 40),
+        ("issue-2-b", "2" * 40),
+        ("issue-4-d", "4" * 40),
+    )
+
+    message(pilot, "prune ja")
+
+    assert deleted(pilot) == [("issue-1-a",)]
+    assert pilot.texts() == ["Gelöscht: issue-1-a"]
+    assert pilot.state["prune"] == []
+
+
+def test_prune_keeps_the_current_branch(pilot):
+    pilot.state = {"waiting_for": "new_issue", "prune": ["issue-1-a"]}
+    pilot.result("git", "branch", "--show-current", out="issue-1-a")
+    merged_prs(pilot, ("issue-1-a", "1" * 40))
+    local_branches(pilot, ("issue-1-a", "1" * 40))
+
+    message(pilot, "prune ja")
+
+    assert deleted(pilot) == []
+    assert pilot.texts() == ["Nichts zu löschen, erst prune senden"]
+
+
+def test_prune_ja_without_prune_deletes_nothing(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    merged_prs(pilot, ("issue-1-a", "1" * 40))
+    local_branches(pilot, ("issue-1-a", "1" * 40))
+
+    message(pilot, "prune ja")
+
+    assert deleted(pilot) == []
+
+
+def test_prune_while_a_step_runs_is_refused(pilot):
+    at_step(pilot, "issue")
+    message(pilot, "prune")
+    assert not pilot.ran("gh", "pr", "list", "--state", "merged")
