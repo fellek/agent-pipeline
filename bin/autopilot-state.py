@@ -79,6 +79,8 @@ ISSUE_FIELDS = {
     "park": None,
     "head": None,
     "merge": None,
+    # HEAD and the remote branch before a read-only step.
+    "refs": None,
     # The event to repeat on `weiter` after a failed command.
     "retry": None,
 }
@@ -553,6 +555,8 @@ class Autopilot:
         counts = self.s["attempts_per_step"]
         counts[step] = counts.get(step, 0) + 1
         self.log("start")
+        if step in CLEAN_STEPS:
+            self.s["refs"] = self.refs()
         if step == "review-issue":
             self.s["head"] = self.head_sha()
             self.background(f"step gate review {self.s['pr']} {self.s['head']}")
@@ -573,9 +577,23 @@ class Autopilot:
 
     # results of a step
 
+    def refs(self):
+        branch = self.s["branch"] or self.current_branch()
+        return [
+            self.ok("git", "rev-parse", "HEAD"),
+            self.ok("git", "ls-remote", "origin", f"refs/heads/{branch}"),
+        ]
+
     def on_result(self, result):
         if result and result.get("PIPELINE_FINDING"):
             self.send(f"{self.prefix()}Pipeline-Befund: {result['PIPELINE_FINDING']}")
+        refs, self.s["refs"] = self.s["refs"], None
+        # A read-only step may still run git commit or push through Bash.
+        if refs is not None and self.refs() != refs:
+            result = {
+                "STATUS": "blocked",
+                "SUMMARY": "Commit oder Push in einem lesenden Schritt",
+            }
         if self.s["question"]:
             self.on_search_result(result)
             return
@@ -711,6 +729,7 @@ class Autopilot:
     def search_answer(self, count=True):
         if count:
             self.s["events_since"] = self.github_now()
+        self.s["refs"] = self.refs()
         self.act(
             skill="pipeline:find-answer",
             args=f'{self.s["issue"]} "{self.s["question"].replace(chr(34), chr(39))}" ""',

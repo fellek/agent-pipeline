@@ -1351,3 +1351,45 @@ def test_retry_ends_when_the_issue_leaves_the_error_pause(pilot, command):
     pilot.result("autopilot-poll.py", "next", out="")
     message(pilot, command)
     assert pilot.state["retry"] is None
+
+
+@pytest.mark.parametrize(
+    ("moved", "out"),
+    [(("git", "rev-parse", "HEAD"), "d" * 40), (("git", "ls-remote"), "new")],
+)
+def test_commit_or_push_in_a_read_only_step_is_blocked(pilot, moved, out):
+    at_step(pilot, "plan-issue", refs=["c" * 40, ""])
+    pilot.result(*moved, out=out)
+    finish(pilot, result())
+    assert pilot.state["step"] == "plan-issue"
+    assert pilot.state["failure"] == "Commit oder Push in einem lesenden Schritt"
+    assert pilot.state["attempts"] == 1
+
+
+def test_unchanged_refs_let_a_read_only_step_pass(pilot):
+    at_step(pilot, "plan-issue", refs=["c" * 40, ""])
+    finish(pilot, result())
+    assert pilot.state["step"] == "issue"
+
+
+def test_commit_in_the_search_is_no_answer(pilot):
+    at_step(
+        pilot, "plan-issue", question=QUESTION, events_since="t0", refs=["c" * 40, ""]
+    )
+    pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, result(summary="use x"))
+    assert not pilot.ran("gh", "issue", "comment", "7")
+    assert pilot.state["parked"][0]["reason"] == "Rückfrage"
+
+
+def test_start_of_a_read_only_step_stores_the_refs(pilot):
+    pilot.result("git", "ls-remote", out="r")
+    pilot.event("start", "")
+    assert pilot.state["refs"] == ["c" * 40, "r"]
+
+
+def test_search_stores_the_refs(pilot):
+    at_step(pilot, "issue")
+    finish(pilot, result("needs_input", open_questions=QUESTION))
+    assert pilot.state["refs"] == ["c" * 40, ""]
