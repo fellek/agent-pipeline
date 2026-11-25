@@ -67,3 +67,24 @@ def test_pipeline_finding_reaches_maintainer():
         "`PIPELINE_FINDING: <comment url>` line, send "
         "`#<n> Pipeline-Befund: <comment url>`" in skill
     )
+
+
+def test_orchestrator_restarts_on_new_pinned_release():
+    skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
+    merge = skill.split("\n## Merge\n")[1].split("\n## ")[0]
+    restart = skill.split("\n## Restart\n")[1].split("\n## ")[0]
+    assert "just invoked, run `release-changed.sh record`" in skill
+    assert "run `release-changed.sh`" in merge
+    assert "Restart with" in merge
+    assert "infrastructure" not in merge
+    assert "`.claude/pipeline-release` exists" in restart
+    assert "`.claude/skills/pipeline/host/use-release.sh`" in restart
+    assert "`autopilot-restart.sh`" in restart
+
+
+def test_update_command_runs_routine():
+    skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
+    update = next(line for line in skill.splitlines() if line.startswith("- `update`"))
+    assert "`release-changed.sh`" in update
+    assert "`.claude/skills/pipeline/host/update-pipeline.sh`" in update
+    assert "Restart with" in update
