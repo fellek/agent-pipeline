@@ -7,12 +7,18 @@ workflow rules: an @ line whose path, relative to the file it is in, points to
 .claude/skills/pipeline/rules/workflow.md of the project. Only the path counts,
 not whether the file exists, so the check passes without the release checked out.
 
+Also fails for each command in the first code block under "## Checks" in
+.claude/rules/project.md that a Bash deny rule matches or no Bash allow rule
+does, since the autopilot would wait for an approval. Rules match as in Claude
+Code: each subcommand of a compound command on its own, "*" stands for any text.
+
 Usage:
   check-project.py
 """
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +28,12 @@ TEMPLATE = (
 SETTINGS = Path(".claude/settings.json")
 CLAUDE_MDS = (Path("CLAUDE.md"), Path(".claude/CLAUDE.md"))
 RULES = ".claude/skills/pipeline/rules/workflow.md"
+PROJECT_RULES = Path(".claude/rules/project.md")
+# Quoted text is matched first so that separators in it are skipped; an & next to
+# < or > is part of a redirection such as 2>&1 or &>.
+SEPARATOR = re.compile(
+    r"""'[^']*'|"(?:\\.|[^"\\])*"|(&&|\|\||\|&|[;|]|(?<![<>])&(?!>))"""
+)
 
 
 def deny_rules(settings):
@@ -36,13 +48,17 @@ def session_start_commands(settings):
     ]
 
 
-def settings_problems():
+def load_settings():
+    """Return the settings and None, or None and the problem."""
     if not SETTINGS.is_file():
-        return [f"{SETTINGS} is missing"]
+        return None, f"{SETTINGS} is missing"
     try:
-        settings = json.loads(SETTINGS.read_text())
+        return json.loads(SETTINGS.read_text()), None
     except json.JSONDecodeError as error:
-        return [f"{SETTINGS} is no valid JSON: {error}"]
+        return None, f"{SETTINGS} is no valid JSON: {error}"
+
+
+def settings_problems(settings):
     template = json.loads(TEMPLATE.read_text())
     denied = set(deny_rules(settings))
     problems = [
@@ -56,6 +72,62 @@ def settings_problems():
         for command in session_start_commands(template)
         if command not in commands
     ]
+    return problems
+
+
+def check_commands():
+    if not PROJECT_RULES.is_file():
+        return []
+    match = re.search(
+        r"^## Checks[ \t]*\n(?:(?!#)[^\n]*\n)*?```[^\n]*\n(.*?)^```",
+        PROJECT_RULES.read_text(),
+        re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        return []
+    return [line.strip() for line in match.group(1).splitlines() if line.strip()]
+
+
+def bash_patterns(rules):
+    return [
+        "*" if rule == "Bash" else rule[5:-1]
+        for rule in rules
+        if rule == "Bash" or (rule.startswith("Bash(") and rule.endswith(")"))
+    ]
+
+
+def matches(pattern, command):
+    if pattern.endswith(":*"):
+        pattern = pattern[:-2] + " *"
+    regex = ".*".join(map(re.escape, pattern.split("*")))
+    if re.fullmatch(regex, command, re.DOTALL):
+        return True
+    # A trailing " *" that is the only wildcard also matches the bare command.
+    return (
+        pattern.endswith(" *") and pattern.count("*") == 1 and command == pattern[:-2]
+    )
+
+
+def subcommands(command):
+    parts, start = [], 0
+    for match in SEPARATOR.finditer(command):
+        if match.group(1):
+            parts.append(command[start : match.start()])
+            start = match.end()
+    parts.append(command[start:])
+    return [part.strip() for part in parts if part.strip()]
+
+
+def check_command_problems(settings):
+    allow = bash_patterns(settings.get("permissions", {}).get("allow", []))
+    deny = bash_patterns(deny_rules(settings))
+    problems = []
+    for command in check_commands():
+        parts = subcommands(command)
+        if any(matches(p, part) for part in parts for p in deny):
+            problems.append(f"{SETTINGS} denies the check command {command}")
+        elif not all(any(matches(p, part) for p in allow) for part in parts):
+            problems.append(f"{SETTINGS} does not allow the check command {command}")
     return problems
 
 
@@ -86,7 +158,12 @@ def claude_md_problems():
 def main(argv):
     if argv:
         sys.exit(__doc__)
-    problems = settings_problems() + claude_md_problems()
+    settings, problem = load_settings()
+    if settings is None:
+        problems = [problem]
+    else:
+        problems = settings_problems(settings) + check_command_problems(settings)
+    problems += claude_md_problems()
     if problems:
         sys.exit("\n".join(problems))
 
