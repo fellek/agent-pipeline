@@ -26,15 +26,22 @@ fi
 [ $# -le 1 ] && [[ $label =~ ^[^[:space:]]+$ ]] || fail "label must not contain whitespace"
 
 # bwrap and socat run the Bash sandbox of .claude/settings.json.
-for cmd in claude git gh tmux bun python3 bwrap socat; do
+for cmd in claude git gh sudo tmux bun python3 bwrap socat; do
   command -v "$cmd" >/dev/null || fail "$cmd is missing"
 done
 claude_version=$(claude --version | cut -d' ' -f1)
 [ "$(printf '%s\n' "$min_claude" "$claude_version" | sort -V | head -1)" = "$min_claude" ] \
   || fail "claude $claude_version is older than $min_claude"
-gh auth status >/dev/null 2>&1 || fail "gh is not logged in"
+# Only the gate may hold a GitHub token, see install-gate.sh.
+! grep -qs oauth_token "$HOME/.config/gh/hosts.yml" && [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] \
+  || fail "$(id -un) holds a GitHub token of its own, only the gate may hold it"
+"${host%/host}/bin/gate" check >/dev/null 2>&1 || fail "the gate does not reach the repository, see install-gate.sh"
 default=$("${host%/host}/bin/default-branch.py") || fail "the default branch is unknown"
 warning=$("$host/check-ruleset.py" "$default" 2>&1) || fail "$warning"
+# The gate runs as root installed it, so a new release does not reach it by itself.
+installed=${PIPELINE_GATE:-/opt/pipeline/gate}
+cmp -s "$host/gate.py" "$installed" \
+  || warning="${warning:+$warning }Warning: $installed differs from host/gate.py of this release, run install-gate.sh again."
 if [ -n "$warning" ]; then
   echo "$session: $warning" >&2
   printf '%s\n' "$warning" | "${host%/host}/bin/telegram-send.py" || true

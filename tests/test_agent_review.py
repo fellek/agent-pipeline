@@ -1,6 +1,7 @@
 import json
 import subprocess
 
+import attestation
 import pytest
 from conftest import load_script
 
@@ -49,8 +50,9 @@ CHANGES = review(body="Verdict: changes requested")
         "thread_reply_after_push",
     ],
 )
-def test_approved(gate, reviews, expected):
-    assert gate.approved(reviews, HEAD) is expected
+def test_approved_by_text_without_key(gate, reviews, expected, capsys):
+    assert gate.approved(reviews, 49, HEAD, None) is expected
+    assert "PIPELINE_REVIEW_KEY is not set" in capsys.readouterr().err
 
 
 def fake_gh(monkeypatch, pages):
@@ -242,3 +244,127 @@ def test_sync_reports_missing_run(monkeypatch, capsys, sync_gate):
 def test_main_rejects_invalid_arguments(gate, argv):
     with pytest.raises(SystemExit):
         gate.main(argv)
+
+
+SHA = "a" * 40
+KEY = "k" * 64
+
+
+def attested(verdict=attestation.APPROVE, key=KEY, sha=SHA, pr=49, state="COMMENTED"):
+    line = attestation.line(key, pr, sha, verdict, "s1")
+    return {"body": f"Verdict: approve\n\n{line}", "commit_id": sha, "state": state}
+
+
+@pytest.mark.parametrize(
+    ("reviews", "expected"),
+    [
+        ([attested()], True),
+        ([attested(attestation.CHANGES_REQUESTED)], False),
+        ([attested(), attested(attestation.CHANGES_REQUESTED)], False),
+        ([attested(attestation.CHANGES_REQUESTED), attested()], True),
+        ([attested(), review(body="Verdict: changes requested", commit_id=SHA)], True),
+        ([review(commit_id=SHA)], False),
+        ([attested(key="other")], False),
+        ([attested(pr=50)], False),
+        ([attested(sha="b" * 40)], False),
+        ([attested(state="DISMISSED")], False),
+    ],
+    ids=[
+        "attested_approve",
+        "attested_changes",
+        "approve_then_changes",
+        "changes_then_approve",
+        "unattested_review_after_approve_is_ignored",
+        "same_account_verdict_without_attestation",
+        "wrong_key",
+        "other_pull_request",
+        "other_commit",
+        "dismissed",
+    ],
+)
+def test_approved_with_key_counts_only_attested_reviews(gate, reviews, expected):
+    assert gate.approved(reviews, 49, SHA, KEY) is expected
+
+
+def test_forged_mac_is_ignored(gate):
+    body = attested()["body"]
+    forged = body[:-10] + ("0" * 6) + body[-4:]
+    assert gate.approved([review(body=forged, commit_id=SHA)], 49, SHA, KEY) is False
+
+
+def test_main_reads_key_from_environment(monkeypatch, gate):
+    monkeypatch.setenv("PIPELINE_REVIEW_KEY", KEY)
+    fake_gh(monkeypatch, [[review(commit_id=SHA)]])
+    with pytest.raises(SystemExit):
+        gate.main(["49", SHA])
+    fake_gh(monkeypatch, [[attested()]])
+    gate.main(["49", SHA])
+
+
+def fake_audit_gh(monkeypatch, pulls, reviews, runs):
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[1:3] == ["issue", "create"]:
+            return subprocess.CompletedProcess(args, 0, stdout="")
+        if args[1] == "run":
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps(runs))
+        if args[-1].endswith("/pulls"):
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps(pulls))
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps([reviews]))
+
+    monkeypatch.setattr(subprocess, "run", run)
+    return calls
+
+
+MERGE = "m" * 40
+MERGED = {
+    "number": 49,
+    "merged_at": "t",
+    "merge_commit_sha": MERGE,
+    "head": {"sha": SHA},
+}
+GREEN = [{"name": "CI", "status": "completed", "conclusion": "success"}]
+
+
+def test_audit_passes_merge_of_attested_pull_request(monkeypatch, gate):
+    monkeypatch.setenv("PIPELINE_REVIEW_KEY", KEY)
+    calls = fake_audit_gh(monkeypatch, [MERGED], [attested()], GREEN)
+    gate.main(["audit", MERGE])
+    assert not any(args[1:3] == ["issue", "create"] for args in calls)
+
+
+@pytest.mark.parametrize(
+    ("pulls", "reviews", "runs", "problem"),
+    [
+        ([], [], GREEN, "no merged pull request"),
+        ([{**MERGED, "merge_commit_sha": "x"}], [], GREEN, "no merged pull request"),
+        ([MERGED], [review(commit_id=SHA)], GREEN, "#49 has no attested approve"),
+        (
+            [MERGED],
+            [attested()],
+            [{"name": "CI", "status": "completed", "conclusion": "failure"}],
+            "runs not passed: CI",
+        ),
+    ],
+)
+def test_audit_opens_issue_for_merge_without_gates(
+    monkeypatch, gate, pulls, reviews, runs, problem
+):
+    monkeypatch.setenv("PIPELINE_REVIEW_KEY", KEY)
+    calls = fake_audit_gh(monkeypatch, pulls, reviews, runs)
+    with pytest.raises(SystemExit) as error:
+        gate.main(["audit", MERGE])
+    assert problem in error.value.code
+    created = next(args for args in calls if args[1:3] == ["issue", "create"])
+    assert created[created.index("--label") + 1] == "followup"
+    assert problem in created[created.index("--body") + 1]
+
+
+def test_audit_without_key_only_warns(monkeypatch, gate, capsys):
+    monkeypatch.delenv("PIPELINE_REVIEW_KEY", raising=False)
+    calls = fake_audit_gh(monkeypatch, [], [], [])
+    gate.main(["audit", MERGE])
+    assert calls == []
+    assert "PIPELINE_REVIEW_KEY is not set" in capsys.readouterr().err

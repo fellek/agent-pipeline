@@ -27,3 +27,4 @@ jobs:
         with:
           pr: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
+          review-key: ${{ secrets.PIPELINE_REVIEW_KEY }}
