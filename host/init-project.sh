@@ -57,7 +57,7 @@ cat <<EOF
 Manual steps:
 - Review the changes and commit them.
 - Start claude in the project once and accept the trust dialog, so it loads the plugin from $sub.
-- Add the project's checks to .claude/rules/project.md and run them in CI, with the submodule checked out.
+- Add the project's checks to .claude/rules/project.md and as steps to .github/workflows/ci.yml; list further CI workflows under Required workflows.
 - Add the check commands to the allow list in .claude/settings.json, otherwise every check run waits for an approval.
 - GitHub settings, General: enable "Automatically delete head branches".
 - GitHub settings, Rules: add a ruleset for the default branch that requires a pull request and the status checks agent-review and CI, and blocks force pushes and deletions.

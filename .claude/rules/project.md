@@ -8,3 +8,5 @@ uv run ruff format --check .
 claude plugin validate --strict .
 bin/check-project.py
 ```
+
+Required workflows: CI
