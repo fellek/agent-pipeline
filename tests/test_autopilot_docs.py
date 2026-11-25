@@ -71,11 +71,13 @@ def test_pipeline_finding_reaches_maintainer():
 
 def test_orchestrator_restarts_on_new_pinned_release():
     skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
-    merge = skill.split("\n## Merge\n")[1].split("\n## ")[0]
+    step3 = next(line for line in skill.splitlines() if line.startswith("3. "))
     restart = skill.split("\n## Restart\n")[1].split("\n## ")[0]
     assert "just invoked, run `release-changed.sh record`" in skill
-    assert "run `release-changed.sh`" in merge
-    assert "Restart with" in merge
+    assert step3.startswith(
+        "3. Without a current issue, first run `release-changed.sh`"
+    )
+    assert "Restart with" in step3
     assert "`.claude/pipeline-release` exists" in restart
     assert "`.claude/skills/pipeline/host/use-release.sh`" in restart
     assert "`autopilot-restart.sh`" in restart
