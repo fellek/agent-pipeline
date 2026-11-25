@@ -135,14 +135,14 @@ def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
 
 @pytest.mark.parametrize(
     ("blocker", "chosen", "labels"),
-    [("open", 61, ["ready"]), ("closed", 60, ["ready", "infrastructure"])],
+    [("open", 61, ["ready"]), ("closed", 60, ["ready", "enhancement"])],
     ids=["open", "closed"],
 )
 def test_next_skips_issue_with_open_blocker(
     monkeypatch, capsys, poll, blocker, chosen, labels
 ):
     calls = fake_gh(
-        monkeypatch, poll, [issue(61, "ready"), issue(60, "ready", "infrastructure")]
+        monkeypatch, poll, [issue(61, "ready"), issue(60, "ready", "enhancement")]
     )
     fake_dependencies(monkeypatch, poll, blocked_by_60=[blocker])
 
@@ -192,7 +192,7 @@ def test_untriaged_reports_issue_without_status_label(monkeypatch, capsys, poll)
         [
             issue(60, "followup"),
             issue(61, "batch-1"),
-            issue(62, "bug", "infrastructure"),
+            issue(62, "bug", "enhancement"),
             {**issue(63), "pull_request": {}},
         ],
     )
@@ -201,7 +201,7 @@ def test_untriaged_reports_issue_without_status_label(monkeypatch, capsys, poll)
 
     assert events(capsys) == [
         {"number": 60, "title": "Neu", "labels": ["followup"]},
-        {"number": 62, "title": "Neu", "labels": ["bug", "infrastructure"]},
+        {"number": 62, "title": "Neu", "labels": ["bug", "enhancement"]},
     ]
     assert "labels=" not in calls[0]
 

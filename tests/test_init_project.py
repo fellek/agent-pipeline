@@ -109,7 +109,7 @@ def test_creates_status_labels(app):
 
     created = set(labels(app).read_text().splitlines())
     status = load_script("autopilot-poll.py").STATUS_LABELS
-    assert created == status | {"followup", "infrastructure"}
+    assert created == status | {"followup"}
 
 
 def test_keeps_existing_files_labels_and_entries(app):

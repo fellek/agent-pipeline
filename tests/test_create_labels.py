@@ -40,7 +40,7 @@ def test_creates_status_and_selection_labels(gh):
 
     assert result.returncode == 0, result.stderr
     status = load_script("autopilot-poll.py").STATUS_LABELS
-    assert set(created(gh)) == status | {"followup", "infrastructure"}
+    assert set(created(gh)) == status | {"followup"}
     assert len(created(gh)) == len(set(created(gh)))
     for name in created(gh):
         assert f"added label {name}" in result.stdout
@@ -66,7 +66,7 @@ def test_creates_only_missing_labels(gh):
     assert result.returncode == 0, result.stderr
     assert created(gh).count("ready") == 1
     assert "kept label ready" in result.stdout
-    assert "added label infrastructure" in result.stdout
+    assert "added label followup" in result.stdout
 
 
 def test_second_run_creates_nothing(gh):

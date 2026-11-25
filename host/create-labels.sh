@@ -11,7 +11,6 @@ labels=(
   "question|d876e3|Waits for an answer from the maintainer"
   "parked|c5def5|Parked by the autopilot"
   "followup|bfdadc|Found while working on another issue"
-  "infrastructure|5319e7|Changes the pipeline or its setup"
 )
 existing=$(gh label list --limit 1000 --json name --jq '.[].name')
 for label in "${labels[@]}"; do

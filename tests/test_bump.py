@@ -61,7 +61,7 @@ def test_opens_pull_request_that_moves_submodule(
     args = gh_args(app, "pr create")
     assert args[args.index("--base") + 1] == default_branch
     assert args[args.index("--head") + 1] == "bump-pipeline-v2"
-    assert args[args.index("--label") + 1] == "infrastructure"
+    assert "--label" not in args
     assert args[args.index("--title") + 1] == "Bump pipeline to v2"
     body = "\n".join(args[args.index("--body") + 1 :])
     assert f"`{SUB}` from v1 to v2" in body
