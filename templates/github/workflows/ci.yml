@@ -3,6 +3,7 @@ name: CI
 # Add the steps for the project's checks from .claude/rules/project.md.
 on:
   pull_request:
+  # The default branch, if it is not main.
   push:
     branches: [main]
 
