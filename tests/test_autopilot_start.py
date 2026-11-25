@@ -362,5 +362,5 @@ def test_broken_release_stops_the_start_with_a_message(
 
 
 def test_validates_the_plugin_of_the_release(run_start, tmp_path):
-    result, *_ = run_start(env={"VALIDATE_EXIT": "1", "VALIDATE_OUT": "x"})
+    run_start(env={"VALIDATE_EXIT": "1", "VALIDATE_OUT": "x"})
     assert f"{tmp_path / 'plugin'} x" in (tmp_path / "telegram").read_text()
