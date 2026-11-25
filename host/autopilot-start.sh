@@ -55,5 +55,8 @@ mkdir -p .pipeline
 status_line='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-statusline.py","refreshInterval":60}}'
 # CLAUDE_CODE_EFFORT_LEVEL would override the effort set per skill.
 # The retry watchdog waits out session and weekly limits instead of opening the limit menu.
+# CI and review syncs run in the background; the timeouts only stop a foreground
+# command after 10 minutes instead of 2, with up to an hour when a call asks for it.
 tmux new-session -d -s "$session" -c "$PWD" env -u CLAUDE_CODE_EFFORT_LEVEL CLAUDE_CODE_RETRY_WATCHDOG=1 \
+  BASH_DEFAULT_TIMEOUT_MS=600000 BASH_MAX_TIMEOUT_MS=3600000 \
   claude --settings "$status_line" --model sonnet --effort medium --channels "$channel" -- "/pipeline:autopilot $label"

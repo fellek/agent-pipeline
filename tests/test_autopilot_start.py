@@ -261,3 +261,10 @@ def test_warns_about_a_stale_gate(run_start, tmp_path):
     assert result.returncode == 0, result.stderr
     assert "differs from host/gate.py" in (tmp_path / "telegram").read_text()
     assert tmux_args[-1] == "/pipeline:autopilot ready"
+
+
+def test_raises_the_bash_timeouts_of_the_session(run_start):
+    result, tmux_args, *_ = run_start()
+    assert result.returncode == 0, result.stderr
+    assert "BASH_DEFAULT_TIMEOUT_MS=600000" in tmux_args
+    assert "BASH_MAX_TIMEOUT_MS=3600000" in tmux_args

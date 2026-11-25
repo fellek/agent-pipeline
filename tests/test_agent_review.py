@@ -368,3 +368,15 @@ def test_audit_without_key_only_warns(monkeypatch, gate, capsys):
     gate.main(["audit", MERGE])
     assert calls == []
     assert "PIPELINE_REVIEW_KEY is not set" in capsys.readouterr().err
+
+
+def test_sync_prints_timeout_after_the_deadline(monkeypatch, capsys, sync_gate):
+    def run(args, **kwargs):
+        if args[1:3] == ["run", "list"]:
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps([RUN]))
+        assert 0 < kwargs["timeout"] <= sync_gate.DEADLINE_SECONDS
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert run_sync(sync_gate, capsys) == (1, "timeout\n")

@@ -125,3 +125,40 @@ def test_main_rejects_invalid_arguments(watcher, argv):
         watcher.main(argv)
 
     assert "Usage" in str(exit_info.value.code)
+
+
+def test_run_past_the_deadline_prints_timeout(monkeypatch, capsys, watcher):
+    timeouts = []
+
+    def run(args, **kwargs):
+        if args[:3] == ["gh", "run", "list"]:
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps([RUN]))
+        timeouts.append(kwargs["timeout"])
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(SystemExit) as exit_info:
+        watcher.main(["master", "abc"])
+
+    assert exit_info.value.code == 1
+    assert capsys.readouterr().out == "timeout\n"
+    assert 0 < timeouts[0] <= watcher.DEADLINE_SECONDS
+
+
+def test_deadline_counts_the_wait_for_the_run(monkeypatch, capsys, watcher):
+    clock = iter([0, watcher.DEADLINE_SECONDS + 1])
+    monkeypatch.setattr(watcher.time, "monotonic", lambda: next(clock))
+    timeouts = []
+
+    def run(args, **kwargs):
+        if args[:3] == ["gh", "run", "list"]:
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps([RUN]))
+        timeouts.append(kwargs["timeout"])
+        raise subprocess.TimeoutExpired(args, 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(SystemExit):
+        watcher.main(["master", "abc"])
+    assert timeouts == [0]
