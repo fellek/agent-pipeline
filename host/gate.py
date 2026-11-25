@@ -42,6 +42,8 @@ REVIEW_PROMPT = HERE / "gate-review.md"
 WORKFLOW_RULES = HERE / "workflow.md"
 PUSHABLE = re.compile(r"refs/heads/(issue|bump-pipeline)-[^/]+")
 ZERO = "0" * 40
+# Only these reach the review: content of others could steer it (prompt injection).
+TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 GH_COMMANDS = {
     "issue": {"view", "list", "comment", "create", "edit", "close", "reopen"},
@@ -86,7 +88,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
       reviewThreads(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
         nodes { id isResolved path line
-          comments(first: 20) { nodes { author { login } body url } } }
+          comments(first: 20) { nodes { author { login } authorAssociation body url } } }
       }
     }
   }
@@ -417,7 +419,12 @@ def reviews(project, pr):
         "--slurp",
         f"repos/{project.repo}/pulls/{pr}/reviews?per_page=100",
     )
-    return [review for page in pages for review in page]
+    return [
+        review
+        for page in pages
+        for review in page
+        if review["author_association"] in TRUSTED
+    ]
 
 
 def threads(project, pr):
@@ -437,12 +444,22 @@ def threads(project, pr):
         f"query={THREADS_QUERY}",
     )
     return [
-        thread
+        {
+            **thread,
+            "comments": {
+                "nodes": trusted(thread["comments"]["nodes"], "authorAssociation")
+            },
+        }
         for page in pages
         for thread in page["data"]["repository"]["pullRequest"]["reviewThreads"][
             "nodes"
         ]
+        if thread["comments"]["nodes"][0]["authorAssociation"] in TRUSTED
     ]
+
+
+def trusted(items, key):
+    return [item for item in items if item[key] in TRUSTED]
 
 
 def runs(project, sha):
@@ -530,9 +547,13 @@ def write_context(project, pull, sha, folder):
     }
     if issue:
         number = issue.group(1)
-        data["issue.json"] = project.gh_json(
+        found = project.gh_json(
             "issue", "view", number, "--json", "number,title,body,comments"
         )
+        data["issue.json"] = {
+            **found,
+            "comments": trusted(found["comments"], "authorAssociation"),
+        }
     for name, value in data.items():
         (folder / name).write_text(json.dumps(value, indent=2, ensure_ascii=False))
     diff = project.run(
