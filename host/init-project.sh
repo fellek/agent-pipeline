@@ -10,6 +10,9 @@ fail() { echo "init-project: $*" >&2; exit 1; }
 [[ $# -eq 1 && -n $1 ]] || fail "usage: init-project.sh <tag>"
 tag=$1
 reason=$("$host/require-project-root.sh") || fail "$reason"
+# The pipeline repository runs its own release from a worktree instead of a submodule.
+[ ! -e .claude/pipeline-release ] \
+  || fail "this is the pipeline repository: run host/use-release.sh here, or cd into the project to set up"
 url=$(sed -n 's/^ *"repository": *"\([^"]*\)".*/\1/p' "$host/../.claude-plugin/plugin.json")
 
 if [ -e "$sub" ]; then

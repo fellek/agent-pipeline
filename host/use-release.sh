@@ -23,7 +23,7 @@ if [ -e "$worktree" ]; then
   # An independent clone there would not see the tag fetched into this repository.
   [ "$(git -C "$worktree" rev-parse --show-toplevel)" = "$(cd "$worktree" && pwd -P)" ] \
     && [ "$(common_dir "$worktree")" = "$(common_dir .)" ] \
-    || fail "$worktree is not a worktree of this repository"
+    || fail "$worktree is not a worktree of this repository; check it, remove it with rm -rf $worktree and run use-release.sh again"
   [ -z "$(git -C "$worktree" status --porcelain)" ] || fail "$worktree has changes"
   git -C "$worktree" switch --quiet --detach "$tag"
 else
