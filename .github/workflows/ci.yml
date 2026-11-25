@@ -27,3 +27,4 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: claude plugin validate --strict .
+      - run: python3 bin/check-project.py

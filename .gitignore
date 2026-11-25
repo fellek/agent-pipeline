@@ -228,3 +228,6 @@ __marimo__/
 
 # Release worktree of this repository's own autopilot, see host/use-release.sh
 .claude/skills/pipeline/
+
+# Local Claude Code settings
+.claude/settings.local.json
