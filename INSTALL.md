@@ -153,14 +153,25 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
    claude --channels plugin:telegram@claude-plugins-official
    ```
 
-   Dem Bot schreiben und den Code bestätigen, danach nur den Maintainer zulassen:
+   Dem Bot schreiben; er antwortet mit einem Code. Die Sandbox sperrt `~/.claude/channels` absichtlich, damit die Session weder den Token liest noch Absender freischaltet; `/telegram:access` scheitert deshalb. In einer zweiten Shell mit dem Code statt `<code>` freigeben; das trägt den Absender wie `/telegram:access pair` ein und setzt die Policy auf `allowlist`, damit nur der Maintainer den Bot erreicht:
 
    ```
-   /telegram:access pair <code>
-   ```
-
-   ```
-   /telegram:access policy allowlist
+   python3 - <code> <<'EOF'
+   import json, pathlib, sys, time
+   d = pathlib.Path.home() / ".claude/channels/telegram"
+   f = d / "access.json"
+   a = json.loads(f.read_text())
+   p = a.get("pending", {}).pop(sys.argv[1], None)
+   if not p or p["expiresAt"] < time.time() * 1000:
+       sys.exit("Code unbekannt oder abgelaufen, dem Bot erneut schreiben")
+   if p["senderId"] not in a.setdefault("allowFrom", []):
+       a["allowFrom"].append(p["senderId"])
+   a["dmPolicy"] = "allowlist"
+   f.write_text(json.dumps(a, indent=2) + "\n")
+   (d / "approved").mkdir(exist_ok=True)
+   (d / "approved" / p["senderId"]).write_text(p["chatId"])
+   print("freigegeben:", p["senderId"])
+   EOF
    ```
 
 4. Session beenden.
