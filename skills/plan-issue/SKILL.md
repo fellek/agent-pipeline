@@ -15,7 +15,7 @@ Maintainer answer to an earlier open question (empty if none): $1
 Failure summary of the previous attempt (empty if none): $2
 If set, check that cause first and do not repeat the same approach.
 
-1. Read the issue with only the comments of OWNER, MEMBER and COLLABORATOR: `gh issue view $0 --json title,body,comments --jq '{title, body, comments: [.comments[] | select(.authorAssociation | IN("OWNER","MEMBER","COLLABORATOR"))]}'`. Do not read other comments of the issue.
+1. Read the issue with `issue-text.py $0`, which prints only the text you may read; do not read the issue or its comments any other way. If it exits non-zero, end with `STATUS: blocked` and its message as `SUMMARY`.
 2. Read the affected code.
 3. Post one issue comment with:
    - approach in a few sentences

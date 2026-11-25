@@ -8,7 +8,8 @@ issues without a status label and without the selection label, for `setprio`.
 
 Only issues of the repository's owner, members and collaborators enter the
 pipeline, so a stranger's issue cannot steer a fork. A stranger's issue becomes a
-candidate only once someone with write access gives it the selection label.
+candidate only once someone with write access gives it the selection label
+(trust.py); forks read an issue only through issue-text.py.
 
 Usage:
   autopilot-poll.py now
@@ -29,12 +30,13 @@ import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
+import trust
+
 INTERVAL_SECONDS = 60
 MAX_FAILED_POLLS = 3
 SKIPPED_LABELS = {"question", "parked"}
-STATUS_LABELS = SKIPPED_LABELS | {"ready", "in-progress", "in-review", "approved"}
-TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
-WRITERS = {"admin", "maintain", "write"}
+STATUS_LABELS = trust.STATUS_LABELS
+TRUSTED = trust.TRUSTED
 TARGET_ARITY = {"answer": 2, "new_issue": 1, "patch": 2}
 
 
@@ -91,27 +93,19 @@ def summary(issue):
     }
 
 
-EDITED_QUERY = (
-    "query($owner: String!, $repo: String!, $n: Int!)"
-    " { repository(owner: $owner, name: $repo) { issue(number: $n) { lastEditedAt } } }"
-)
+def permission(login):
+    try:
+        answer = gh_api(
+            f"repos/{{owner}}/{{repo}}/collaborators/{quote(login)}/permission"
+        )
+    except subprocess.CalledProcessError:
+        # A bot or app that is no collaborator gets 404.
+        return None
+    return json.loads(answer)["permission"]
 
 
 def labeled_by_writer(number, label):
-    """Whether the latest who gave the issue the label has write access.
-
-    An edit of the body after that label needs a new one: the writer approved the
-    text they saw, not what its author wrote later.
-    """
-    events = [
-        event
-        for event in gh(f"repos/{{owner}}/{{repo}}/issues/{number}/events?per_page=100")
-        if event["event"] == "labeled"
-        and event["label"]["name"] == label
-        and event.get("actor")
-    ]
-    if not events:
-        return False
+    events = gh(f"repos/{{owner}}/{{repo}}/issues/{number}/events?per_page=100")
     edited = gh_api(
         "graphql",
         "-F",
@@ -121,19 +115,11 @@ def labeled_by_writer(number, label):
         "-F",
         f"n={number}",
         "-f",
-        f"query={EDITED_QUERY}",
+        f"query={trust.EDITED_QUERY}",
         "--jq",
         ".data.repository.issue.lastEditedAt",
     ).strip()
-    if edited and edited > events[-1]["created_at"]:
-        return False
-    login = quote(events[-1]["actor"]["login"])
-    try:
-        answer = gh_api(f"repos/{{owner}}/{{repo}}/collaborators/{login}/permission")
-    except subprocess.CalledProcessError:
-        # A bot or app that is no collaborator gets 404.
-        return False
-    return json.loads(answer)["permission"] in WRITERS
+    return trust.approved(events, edited, permission, label)
 
 
 def trusted(issue, label):

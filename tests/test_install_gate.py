@@ -70,7 +70,7 @@ def test_gate_code_belongs_to_root(install):
     opt = root / "opt" / "pipeline"
     assert (opt / "gate").read_text() == (ROOT / "host" / "gate.py").read_text()
     assert mode(opt / "gate") == 0o755
-    for name in ("gate", "attestation.py", "gate-review.md", "workflow.md"):
+    for name in ("gate", "attestation.py", "trust.py", "gate-review.md", "workflow.md"):
         assert owners[str(opt / name)] == "root:root"
         assert not mode(opt / name) & 0o022
 

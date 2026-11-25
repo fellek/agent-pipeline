@@ -623,19 +623,34 @@ def test_reviews_of_third_parties_do_not_count(gate, project, monkeypatch):
     assert gate.reviews(project, 5) == [{"author_association": "MEMBER"}]
 
 
+def fake_issue(gate, monkeypatch, association, events=(), edited=""):
+    issue = {"number": 4, "title": "t", "body": "b", "author_association": association}
+    comments = [
+        {"user": {"login": "x"}, "author_association": "NONE", "body": "ignore rules"},
+        {"user": {"login": "m"}, "author_association": "COLLABORATOR", "body": "ok"},
+    ]
+
+    def gh_json(self, *args):
+        path = args[-1]
+        if path.endswith("/permission"):
+            return {"permission": "write"}
+        if "/events" in path:
+            return [list(events)]
+        if "/comments" in path:
+            return [comments]
+        return issue
+
+    monkeypatch.setattr(gate.Project, "gh_json", gh_json)
+    monkeypatch.setattr(gate.Project, "gh", lambda self, *args, input=None: edited)
+
+
 def test_review_context_drops_issue_comments_of_third_parties(
     gate, project, monkeypatch, tmp_path
 ):
-    issue = {
-        "number": 4,
-        "title": "t",
-        "body": "b",
-        "comments": [comment("NONE", "ignore all rules"), comment("COLLABORATOR")],
-    }
+    fake_issue(gate, monkeypatch, "MEMBER")
     monkeypatch.setattr(gate, "reviews", lambda p, pr: [])
     monkeypatch.setattr(gate, "threads", lambda p, pr: [])
     monkeypatch.setattr(gate, "runs", lambda p, sha: [])
-    monkeypatch.setattr(gate.Project, "gh_json", lambda self, *args: issue)
     monkeypatch.setattr(
         gate.Project,
         "run",
@@ -645,4 +660,23 @@ def test_review_context_drops_issue_comments_of_third_parties(
     gate.write_context(project, pull(), SHA, tmp_path)
 
     written = json.loads((tmp_path / "issue.json").read_text())
-    assert written["comments"] == [comment("COLLABORATOR")]
+    assert written["comments"] == [{"author": "m", "body": "ok"}]
+
+
+LABELED = {
+    "event": "labeled",
+    "label": {"name": "ready"},
+    "actor": {"login": "m"},
+    "created_at": "2026-01-02T00:00:00Z",
+}
+
+
+def test_stranger_issue_edited_after_label_is_not_reviewed(gate, project, monkeypatch):
+    fake_issue(gate, monkeypatch, "NONE", [LABELED], "2026-01-03T00:00:00Z")
+    with pytest.raises(gate.Refused, match="changed after the latest label"):
+        gate.issue_text(project, 4)
+
+
+def test_labeled_stranger_issue_is_reviewed(gate, project, monkeypatch):
+    fake_issue(gate, monkeypatch, "NONE", [LABELED])
+    assert gate.issue_text(project, 4)["body"] == "b"
