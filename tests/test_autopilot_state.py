@@ -768,7 +768,7 @@ def test_status_reports_issue_label_and_parked(pilot):
     message(pilot, "status")
     text, buttons = pilot.sent[0]
     assert "#7 issue, Versuche 1" in text
-    assert "Label ready" in text
+    assert "Auswahl-Label ready" in text
     assert "geparkt #4 (Rückfrage, wartet)" in text
     assert buttons == ("park #7", "stop #7")
 
