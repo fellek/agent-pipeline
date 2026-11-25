@@ -29,7 +29,11 @@ SETTINGS = Path(".claude/settings.json")
 CLAUDE_MDS = (Path("CLAUDE.md"), Path(".claude/CLAUDE.md"))
 RULES = ".claude/skills/pipeline/rules/workflow.md"
 PROJECT_RULES = Path(".claude/rules/project.md")
-SEPARATORS = re.compile(r"&&|\|\||\|&|[;|&]")
+# Quoted text is matched first so that separators in it are skipped; an & next to
+# < or > is part of a redirection such as 2>&1 or &>.
+SEPARATOR = re.compile(
+    r"""'[^']*'|"(?:\\.|[^"\\])*"|(&&|\|\||\|&|[;|]|(?<![<>])&(?!>))"""
+)
 
 
 def deny_rules(settings):
@@ -104,13 +108,22 @@ def matches(pattern, command):
     )
 
 
+def subcommands(command):
+    parts, start = [], 0
+    for match in SEPARATOR.finditer(command):
+        if match.group(1):
+            parts.append(command[start : match.start()])
+            start = match.end()
+    parts.append(command[start:])
+    return [part.strip() for part in parts if part.strip()]
+
+
 def check_command_problems(settings):
-    permissions = settings.get("permissions", {})
-    allow = bash_patterns(permissions.get("allow", []))
-    deny = bash_patterns(permissions.get("deny", []))
+    allow = bash_patterns(settings.get("permissions", {}).get("allow", []))
+    deny = bash_patterns(deny_rules(settings))
     problems = []
     for command in check_commands():
-        parts = [part.strip() for part in SEPARATORS.split(command) if part.strip()]
+        parts = subcommands(command)
         if any(matches(p, part) for part in parts for p in deny):
             problems.append(f"{SETTINGS} denies the check command {command}")
         elif not all(any(matches(p, part) for p in allow) for part in parts):

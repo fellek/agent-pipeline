@@ -31,22 +31,22 @@ def check(cwd, *args):
     )
 
 
-def write_deny(app, rules):
+def write_permissions(app, **rules):
     settings = app / ".claude" / "settings.json"
     data = json.loads(settings.read_text())
-    data["permissions"]["deny"] = rules
+    data["permissions"].update(rules)
     settings.write_text(json.dumps(data))
 
 
-def write_checks(app, commands, allow=(), deny=DENY):
+def write_deny(app, rules):
+    write_permissions(app, deny=rules)
+
+
+def write_checks(app, commands, allow=()):
     (app / ".claude" / "rules" / "project.md").write_text(
         "## Checks\n\n<!-- note -->\n\n```\n" + "\n".join(commands) + "\n```\n"
     )
-    settings = app / ".claude" / "settings.json"
-    data = json.loads(settings.read_text())
-    data["permissions"]["allow"] = list(allow)
-    data["permissions"]["deny"] = list(deny)
-    settings.write_text(json.dumps(data))
+    write_permissions(app, allow=list(allow))
 
 
 def test_accepts_templates(app):
@@ -220,6 +220,11 @@ def test_template_lets_the_autopilot_read_only_the_telegram_access_list():
         ("npm test", "Bash"),
         ("npm test", "Bash(*)"),
         ("make lint && make test", "Bash(make *)"),
+        ("make test 2>&1", "Bash(make test *)"),
+        ("make test &> log", "Bash(make test *)"),
+        ("make test >&2", "Bash(make test *)"),
+        ("pytest -k 'a|b'", "Bash(pytest *)"),
+        ('pytest -k "a && b"', "Bash(pytest *)"),
     ],
 )
 def test_accepts_allowed_check_command(app, command, rule):
@@ -238,6 +243,9 @@ def test_accepts_allowed_check_command(app, command, rule):
         ("npm --help", "Bash(* --help *)"),
         ("make lint && npm test", "Bash(make *)"),
         ("make lint | tee log", "Bash(make *)"),
+        ("make lint & npm test", "Bash(make *)"),
+        ("make lint |& npm test", "Bash(make *)"),
+        ("make lint; npm test", "Bash(make *)"),
         ("npm test", "Read(./npm test)"),
     ],
 )
