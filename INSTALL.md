@@ -59,7 +59,7 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 ## 7. Dienst (als Projekt-Benutzer, im Projektverzeichnis)
 
 1. `.claude/skills/pipeline/host/check-fork.sh` muss `OK: forked skill is isolated` melden (Forks dürfen die Unterhaltung nicht sehen).
-2. `.claude/skills/pipeline/host/install-service.sh [<label>]` schreibt den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` und startet ihn; Default-Label `ready`. Für dieses Repository aus dem Release-Worktree aufrufen, damit der Dienst nicht den Arbeitsstand ausführt.
+2. `.claude/skills/pipeline/host/install-service.sh [<label>]` schreibt den systemd-User-Dienst `~/.config/systemd/user/autopilot-<Repository>.service` und startet ihn; Default-Label `ready`. Dazu kommen ein Alarm bei jedem Fehlschlag des Dienstes (`-alert.service` über `OnFailure=`) und ein Watchdog alle 15 Minuten (`-watchdog.timer`), die beide über `telegram-send.py` melden ([`autopilot-watchdog.py`](host/autopilot-watchdog.py)). Für dieses Repository aus dem Release-Worktree aufrufen, damit der Dienst nicht den Arbeitsstand ausführt.
 
 ## 8. Prüfen
 

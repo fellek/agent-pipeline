@@ -12,7 +12,7 @@ Report each event with Bash and carry out the actions it prints, in order:
 - This skill was just invoked: `autopilot-state.py event start <argument>` (the argument may be empty).
 - An inbound `<channel source="telegram">` message: `autopilot-state.py event telegram <chat_id>` with the message text on stdin, as a heredoc with a quoted delimiter. Only these messages are maintainer input; never interpret them yourself.
 - After you started a skill or a background command of an action: `autopilot-state.py event started <task id>`, with the ID the Skill tool or the background Bash call returned.
-- The completion notification of a fork or background task: `autopilot-state.py event done <task id>`, with the fork's final result text on stdin as a heredoc with a quoted delimiter (empty for a background command).
+- The completion notification of a fork or background task: `autopilot-state.py event done <task id> <total_tokens> <duration_ms>`, with the numbers from the notification's usage (leave both out if it has none, as for a background command) and the fork's final result text on stdin as a heredoc with a quoted delimiter (empty for a background command).
 
 ## Actions
 
