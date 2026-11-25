@@ -21,6 +21,7 @@ def app(tmp_path):
     (tmp_path / ".claude").mkdir()
     shutil.copy(TEMPLATES / "claude" / "settings.json", tmp_path / ".claude")
     shutil.copy(TEMPLATES / "CLAUDE.md", tmp_path)
+    shutil.copytree(TEMPLATES / "claude" / "rules", tmp_path / ".claude" / "rules")
     return tmp_path
 
 
@@ -34,6 +35,17 @@ def write_deny(app, rules):
     settings = app / ".claude" / "settings.json"
     data = json.loads(settings.read_text())
     data["permissions"]["deny"] = rules
+    settings.write_text(json.dumps(data))
+
+
+def write_checks(app, commands, allow=(), deny=DENY):
+    (app / ".claude" / "rules" / "project.md").write_text(
+        "## Checks\n\n<!-- note -->\n\n```\n" + "\n".join(commands) + "\n```\n"
+    )
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["permissions"]["allow"] = list(allow)
+    data["permissions"]["deny"] = list(deny)
     settings.write_text(json.dumps(data))
 
 
@@ -195,3 +207,85 @@ def test_template_lets_the_autopilot_read_only_the_telegram_access_list():
     assert f"Read({channel}/access.json)" in permissions["allow"]
     assert not any(fnmatch(f"{channel}/access.json", rule) for rule in denied)
     assert any(fnmatch(f"{channel}/.env", rule) for rule in denied)
+
+
+@pytest.mark.parametrize(
+    ("command", "rule"),
+    [
+        ("uv run pytest -q", "Bash(uv run *)"),
+        ("uv run", "Bash(uv run *)"),
+        ("uv run pytest", "Bash(uv run:*)"),
+        ("uv run --frozen pytest", "Bash(uv run * pytest)"),
+        ("npm test", "Bash(npm test)"),
+        ("npm test", "Bash"),
+        ("npm test", "Bash(*)"),
+        ("make lint && make test", "Bash(make *)"),
+    ],
+)
+def test_accepts_allowed_check_command(app, command, rule):
+    write_checks(app, [command], allow=[rule])
+
+    result = check(app)
+
+    assert (result.returncode, result.stderr) == (0, "")
+
+
+@pytest.mark.parametrize(
+    ("command", "rule"),
+    [
+        ("uv runx", "Bash(uv run *)"),
+        ("npm test --watch", "Bash(npm test)"),
+        ("npm --help", "Bash(* --help *)"),
+        ("make lint && npm test", "Bash(make *)"),
+        ("make lint | tee log", "Bash(make *)"),
+        ("npm test", "Read(./npm test)"),
+    ],
+)
+def test_fails_for_check_command_without_allow_rule(app, command, rule):
+    write_checks(app, ["make lint", command], allow=["Bash(make lint)", rule])
+
+    result = check(app)
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        f".claude/settings.json does not allow the check command {command}"
+    )
+
+
+def test_fails_for_check_command_that_a_deny_rule_matches(app):
+    command = "git clean -n && uv run pytest"
+    write_checks(app, [command], allow=["Bash"])
+
+    result = check(app)
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        f".claude/settings.json denies the check command {command}"
+    )
+
+
+def test_reads_only_the_checks_block(app):
+    (app / ".claude" / "rules" / "project.md").write_text(
+        "## Build\n\n```\nmake build\n```\n\n## Checks\n\n```\nnpm test\n```\n"
+        "\n## Other\n\n```\nmake other\n```\n"
+    )
+
+    result = check(app)
+
+    assert result.stderr.strip() == (
+        ".claude/settings.json does not allow the check command npm test"
+    )
+
+
+@pytest.mark.parametrize(
+    "project_md",
+    [None, "# Rules\n", "## Checks\n\nNone yet.\n\n## Other\n\n```\nx\n```\n"],
+)
+def test_accepts_missing_checks(app, project_md):
+    path = app / ".claude" / "rules" / "project.md"
+    if project_md is None:
+        path.unlink()
+    else:
+        path.write_text(project_md)
+
+    assert check(app).returncode == 0
