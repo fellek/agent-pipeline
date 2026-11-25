@@ -9,6 +9,11 @@ channel=plugin:$plugin
 label=${1:-ready}
 
 fail() { echo "$session: $*, see ${host%/host}/INSTALL.md" >&2; exit 1; }
+# A release that bumps a version stops the service; the maintainer learns it here.
+fail_with_message() {
+  printf '%s\n' "$session: $*" | "${host%/host}/bin/telegram-send.py" >/dev/null 2>&1 || true
+  fail "$@"
+}
 
 reason=$("$host/require-project-root.sh") || fail "$reason"
 
@@ -32,7 +37,7 @@ for cmd in claude git gh sudo tmux bun python3 bwrap socat; do
 done
 claude_version=$(claude --version | cut -d' ' -f1)
 [ "$claude_version" = "$claude_code" ] \
-  || fail "claude $claude_version is not $claude_code, run: claude install $claude_code"
+  || fail_with_message "claude $claude_version is not $claude_code, run: claude install $claude_code"
 # Only the gate may hold a GitHub token, see install-gate.sh.
 ! grep -qs oauth_token "$HOME/.config/gh/hosts.yml" && [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] \
   || fail "$(id -un) holds a GitHub token of its own, only the gate may hold it"
@@ -50,10 +55,10 @@ fi
 plugin_version=$(claude plugin list --json | python3 -c '
 import json, sys
 print(next((p["version"] for p in json.load(sys.stdin) if p["id"] == sys.argv[1]), ""))
-' "$plugin")
+' "$plugin" 2>/dev/null) || fail "claude plugin list --json failed"
 [ -n "$plugin_version" ] || fail "Telegram plugin is not installed"
 [ "$plugin_version" = "$telegram_plugin" ] \
-  || fail "Telegram plugin $plugin_version is not $telegram_plugin"
+  || fail_with_message "Telegram plugin $plugin_version is not $telegram_plugin"
 [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || [ -f "$HOME/.claude/channels/telegram/.env" ] \
   || fail "Telegram token is missing"
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"

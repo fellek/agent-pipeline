@@ -309,3 +309,24 @@ def test_refuses_other_versions(run_start, env, message):
     assert result.returncode == 1
     assert message in result.stderr
     assert tmux_args == []
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"CLAUDE_VERSION": "2.1.999"}, {"PLUGINS": plugins("0.0.8")}],
+    ids=["claude", "plugin"],
+)
+def test_version_mismatch_reaches_telegram(run_start, tmp_path, env):
+    result, *_ = run_start(env=env)
+
+    assert result.returncode == 1
+    assert "is not" in (tmp_path / "telegram").read_text()
+
+
+def test_fails_with_message_when_plugin_list_fails(run_start):
+    result, tmux_args, *_ = run_start(env={"PLUGINS": "not json"})
+
+    assert result.returncode == 1
+    assert "claude plugin list --json failed" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert tmux_args == []
