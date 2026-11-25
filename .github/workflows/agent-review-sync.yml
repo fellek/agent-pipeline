@@ -20,7 +20,11 @@ jobs:
   agent-review-sync:
     runs-on: ubuntu-latest
     steps:
+      # The action gets the review key, so its code comes from the base, never
+      # from the branch of the pull request.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
       - uses: ./actions/agent-review-sync
         with:
           pr: ${{ github.event.pull_request.number }}

@@ -166,6 +166,14 @@ def test_allowed_gh_commands(gate, args):
         ),
         (["api", "graphql", "-F", "query=@-"], "file values"),
         (["api", "graphql"], "only GraphQL queries"),
+        (["issue", "comment", "1", "-F/etc/x"], "-F needs its value"),
+        (["pr", "list", "-Ro/site"], "-R needs its value"),
+        (["pr", "create", "--recover", "/etc/x"], "--recover"),
+        (["pr", "create", "--recover=/etc/x"], "--recover"),
+        (["api", "-XPUT", "repos/o/app/pulls/1/merge"], "-X needs its value"),
+        (["api", "repos/o/app/pulls/1/reviews", "-fevent=APPROVE"], "-f needs"),
+        (["api", "repos/o/app/issues/5/comments", "-Ftitle=@/etc/x"], "-F needs"),
+        (["api", "--unknown", "repos/o/app/issues"], "--unknown is not allowed"),
         ([], "needs a command"),
     ],
 )
@@ -496,6 +504,17 @@ def test_review_output_with_a_secret_is_not_posted(gate, project, reviewing, sec
     assert posted == []
 
 
+def test_review_output_with_a_secret_of_another_project_is_not_posted(
+    gate, project, reviewing, tmp_path
+):
+    add_project(tmp_path / "store", "other", "o/site", token="github_pat_other")
+    result, posted, _ = reviewing
+    result["summary"] = "leak github_pat_other"
+    with pytest.raises(gate.Refused, match="contains a secret"):
+        gate.review(project, 5, SHA)
+    assert posted == []
+
+
 def test_claude_review_runs_without_token_and_project_settings(
     gate, project, monkeypatch, tmp_path
 ):
@@ -515,12 +534,16 @@ def test_claude_review_runs_without_token_and_project_settings(
     assert gate.claude_review(project, tmp_path, "s1") == {"verdict": "approve"}
 
     args, kwargs = calls[0]
-    assert args[args.index("--setting-sources") + 1] == "user"
+    assert "--restricted" in args
+    assert "--setting-sources" not in args
+    settings = json.loads(args[args.index("--settings") + 1])
+    assert "Read(//proc/**)" in settings["permissions"]["deny"]
+    assert str(tmp_path / "tree") in args
     assert args[args.index("--tools") + 1] == "Read,Grep,Glob"
     assert args[-2:] == ["--tools", "Read,Grep,Glob"]
     assert not any(TOKEN in value for value in kwargs["env"].values())
     assert "GH_TOKEN" not in kwargs["env"]
-    assert kwargs["cwd"] == tmp_path / "tree"
+    assert kwargs["cwd"] == tmp_path / "base"
     assert str(tmp_path / "context") in kwargs["input"]
 
 
@@ -560,7 +583,7 @@ def test_post_review_folds_comments_into_body_on_failure(gate, project, monkeypa
 
 def test_review_prompt_names_only_known_placeholders():
     prompt = (ROOT / "host" / "gate-review.md").read_text()
-    assert prompt.format(context="C", base="B", rules="R")
+    assert prompt.format(context="C", tree="T", rules="R")
 
 
 def test_usage(gate):

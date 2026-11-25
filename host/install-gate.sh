@@ -55,20 +55,6 @@ for name in repo token review-key; do
   file "$store/$name" 0600 "$gate_user:$gate_user"
 done
 
-# The review session of the gate must not read the tokens or Claude's credentials.
-gate_claude=$root/var/lib/pipeline-gate/.claude
-if [ ! -e "$gate_claude/settings.json" ]; then
-  dir "$gate_claude" 0700 "$gate_user:$gate_user"
-  cat >"$gate_claude/settings.json" <<'JSON'
-{
-  "permissions": {
-    "deny": ["Read(//etc/pipeline-gate/**)", "Read(~/.claude/**)", "Read(~/.config/**)"]
-  }
-}
-JSON
-  file "$gate_claude/settings.json" 0600 "$gate_user:$gate_user"
-fi
-
 mkdir -p "$root/etc/sudoers.d"
 sudoers=$root/etc/sudoers.d/pipeline-gate-$user
 printf '%s ALL=(%s) NOPASSWD: /opt/pipeline/gate\n' "$user" "$gate_user" >"$sudoers.tmp"

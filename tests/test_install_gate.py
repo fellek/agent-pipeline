@@ -115,12 +115,6 @@ def test_rerun_keeps_token_and_key(install):
     assert config.count("insteadOf") == 2
 
 
-def test_review_session_of_the_gate_may_not_read_secrets(install):
-    _result, root, *_ = install("app", "o/app")
-    settings = (root / "var/lib/pipeline-gate/.claude/settings.json").read_text()
-    assert "Read(//etc/pipeline-gate/**)" in settings
-
-
 @pytest.mark.parametrize(
     ("args", "token", "message"),
     [
