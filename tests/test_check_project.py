@@ -57,6 +57,29 @@ def test_fails_without_a_required_deny_rule(app, rule):
     assert result.stderr.strip() == f".claude/settings.json lacks the deny rule {rule}"
 
 
+def test_fails_without_session_start_hook(app):
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    del data["hooks"]
+    settings.write_text(json.dumps(data))
+
+    result = check(app)
+
+    assert result.returncode == 1
+    assert "lacks the SessionStart hook of the pipeline" in result.stderr
+    assert "check-release.sh" in result.stderr
+
+
+def test_accepts_extra_session_start_hooks(app):
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["hooks"]["SessionStart"].insert(
+        0, {"hooks": [{"type": "command", "command": "true"}]}
+    )
+    settings.write_text(json.dumps(data))
+    assert check(app).returncode == 0
+
+
 def test_fails_without_settings(app):
     (app / ".claude" / "settings.json").unlink()
 
