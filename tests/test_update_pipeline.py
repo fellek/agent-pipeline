@@ -159,3 +159,44 @@ def test_release_changed_needs_record(project):
     result = release_changed(project[1])
     assert result.returncode == 1
     assert "record" in result.stderr
+
+
+def test_update_skips_pre_releases_unless_asked(project, gh):
+    _, clone = project
+
+    update(clone)
+    stable = gh_args(gh, "release list")
+    (gh / "gh_release_list").unlink()
+    git(clone, "branch", "-q", "-D", "bump-pipeline-v2")
+    run(clone, script_path("update-pipeline.sh"), "--pre")
+
+    assert "--exclude-pre-releases" in stable
+    assert "--exclude-pre-releases" not in gh_args(gh, "release list")
+
+
+def rollback(cwd):
+    return run(cwd, script_path("rollback-pipeline.sh"))
+
+
+@pytest.mark.parametrize("own_repo", [False, True])
+def test_rollback_opens_the_pull_request_to_the_previous_release(request, own_repo):
+    upstream, clone = request.getfixturevalue("own" if own_repo else "project")
+    gh = request.getfixturevalue("gh")
+    move_pin_on_origin(upstream, "v2", own=own_repo)
+    git(clone, "pull", "-q")
+
+    result = rollback(clone)
+
+    assert result.returncode == 0, result.stderr
+    args = gh_args(gh, "pr create")
+    assert args[args.index("--title") + 1] == "Bump pipeline to v1"
+
+
+def test_rollback_fails_without_an_earlier_release(project, gh):
+    _, clone = project
+
+    result = rollback(clone)
+
+    assert result.returncode == 1
+    assert "no release before the current one" in result.stderr
+    assert gh_args(gh, "pr create") is None

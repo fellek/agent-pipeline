@@ -9,9 +9,9 @@ on:
         description: Tag, must be v<version> of .claude-plugin/plugin.json
         required: true
       prerelease:
-        description: Mark as pre-release
+        description: Mark as pre-release, which update-pipeline.sh takes only with --pre
         type: boolean
-        default: true
+        default: false
       notes:
         description: Upgrade notes, placed before the generated notes
         required: false

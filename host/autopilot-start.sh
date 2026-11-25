@@ -61,6 +61,10 @@ print(next((p["version"] for p in json.load(sys.stdin) if p["id"] == sys.argv[1]
   || fail_with_message "Telegram plugin $plugin_version is not $telegram_plugin"
 [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || [ -f "$HOME/.claude/channels/telegram/.env" ] \
   || fail "Telegram token is missing"
+# A broken release would otherwise end in a restart loop that only the journal shows.
+release=$("$host/check-release.sh" 2>&1) || fail_with_message "$release"
+validate=$(claude plugin validate "${host%/host}" 2>&1) \
+  || fail_with_message "the pipeline release fails claude plugin validate: $(tail -n 1 <<<"$validate")"
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"
 
 mkdir -p .pipeline

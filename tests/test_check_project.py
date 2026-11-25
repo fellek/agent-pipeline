@@ -12,6 +12,9 @@ TEMPLATES = ROOT / "templates"
 DENY = json.loads((TEMPLATES / "claude" / "settings.json").read_text())["permissions"][
     "deny"
 ]
+REVIEW_WORKFLOWS = sorted(
+    (TEMPLATES / "github" / "workflows").glob("agent-review*.yml")
+)
 RULES_IMPORT = "@.claude/skills/pipeline/rules/workflow.md"
 MISSING_IMPORT = f"CLAUDE.md and .claude/CLAUDE.md lack an import of {RULES_IMPORT[1:]}"
 
@@ -25,6 +28,8 @@ def app(tmp_path):
     shutil.copytree(TEMPLATES / "claude" / "rules", tmp_path / ".claude" / "rules")
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / ".github" / "workflows" / "ci.yml").write_text("name: CI\non: push\n")
+    for template in REVIEW_WORKFLOWS:
+        shutil.copy(template, tmp_path / ".github" / "workflows")
     return tmp_path
 
 
@@ -420,3 +425,25 @@ def test_fails_without_a_denied_read(app, path):
     assert result.stderr.strip() == (
         f".claude/settings.json lacks sandbox.filesystem.denyRead: {path}"
     )
+
+
+@pytest.mark.parametrize("change", ["edit", "delete"])
+@pytest.mark.parametrize("template", REVIEW_WORKFLOWS, ids=lambda p: p.name)
+def test_fails_for_a_drifted_review_workflow(app, template, change):
+    copy = app / ".github" / "workflows" / template.name
+    if change == "edit":
+        copy.write_text(copy.read_text() + "# local\n")
+    else:
+        copy.unlink()
+
+    result = check(app)
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        f".github/workflows/{template.name} differs from the template of the "
+        f"pipeline release, copy {template}"
+    )
+
+
+def test_pipeline_repository_keeps_its_own_review_workflows():
+    assert check(ROOT).returncode == 0

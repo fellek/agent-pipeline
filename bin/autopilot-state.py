@@ -131,7 +131,7 @@ DIRTY = "Ungesicherte Änderungen im Arbeitsbaum, cleanup sichert sie auf einem 
 PAUSED = "Pausiert, weiter setzt fort"
 COMMAND = re.compile(
     r"^(?:#(?P<answer>\d+)\s+(?P<text>.+)"
-    r"|(?P<simple>help|status|pause|weiter|cleanup|update|/verbose)"
+    r"|(?P<simple>help|status|pause|weiter|cleanup|update|rollback|/verbose)"
     r"|(?P<park>park|stop)\s+#(?P<park_n>\d+)"
     r"|label\s+(?P<label>\S+)"
     r"|/(?P<task>[\w-]+)(?:\s+(?P<task_n>\d+))?)$",
@@ -1179,8 +1179,8 @@ class Autopilot:
             self.reply(f"#{self.s['issue']} Ein Schritt läuft", *self.step_buttons())
         if simple == "weiter":
             self.weiter()
-        if simple == "update":
-            self.update()
+        if simple in ("update", "rollback"):
+            self.update(simple)
         if simple == "cleanup":
             self.cleanup()
         if match["task"]:
@@ -1290,19 +1290,21 @@ class Autopilot:
             self.reply(f"#{n} cleanup fehlgeschlagen: {err or out}")
         self.reply(f"#{n} Änderungen auf {out} gesichert, nicht gepusht")
 
-    def update(self):
+    def update(self, command):
         if self.s["issue"] is not None or self.s["waiting_for"] not in (
             "new_issue",
             "resume",
         ):
-            self.reply("update nur ohne aktuelles Issue")
+            self.reply(f"{command} nur ohne aktuelles Issue")
         if not self.clean():
             self.reply(DIRTY, "cleanup", "status")
         code, release, error = self.run("release-changed.sh")
         if code == 0 and release:
             self.to_default()
             self.restart(f"Autopilot startet neu auf {release}")
-        code, out, error = self.run(".claude/skills/pipeline/host/update-pipeline.sh")
+        code, out, error = self.run(
+            f".claude/skills/pipeline/host/{command}-pipeline.sh"
+        )
         if code != 0:
             self.reply(error or out)
         self.reply(out.splitlines()[-1] if out else "")

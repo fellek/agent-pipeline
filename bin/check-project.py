@@ -16,6 +16,9 @@ Code: each subcommand of a compound command on its own, "*" stands for any text.
 With checks, the section also needs a line "Required workflows: <name>, ..." whose
 names are workflows in .github/workflows, the CI runs the autopilot waits for.
 
+In a project, each .github/workflows/agent-review*.yml must match the template of
+the pipeline release that runs this script, since bump.sh copies no templates.
+
 Usage:
   check-project.py
 """
@@ -26,9 +29,9 @@ import re
 import sys
 from pathlib import Path
 
-TEMPLATE = (
-    Path(__file__).resolve().parents[1] / "templates" / "claude" / "settings.json"
-)
+PIPELINE = Path(__file__).resolve().parents[1]
+TEMPLATE = PIPELINE / "templates" / "claude" / "settings.json"
+WORKFLOW_TEMPLATES = PIPELINE / "templates" / "github" / "workflows"
 SETTINGS = Path(".claude/settings.json")
 CLAUDE_MDS = (Path("CLAUDE.md"), Path(".claude/CLAUDE.md"))
 RULES = ".claude/skills/pipeline/rules/workflow.md"
@@ -172,6 +175,19 @@ def workflow_problems():
     ]
 
 
+def drift_problems():
+    # The pipeline repository runs its actions from its own tree, not the submodule.
+    if normalized(PIPELINE) == normalized("."):
+        return []
+    return [
+        f"{WORKFLOWS / template.name} differs from the template of the pipeline "
+        f"release, copy {template}"
+        for template in sorted(WORKFLOW_TEMPLATES.glob("agent-review*.yml"))
+        if not (WORKFLOWS / template.name).is_file()
+        or (WORKFLOWS / template.name).read_text() != template.read_text()
+    ]
+
+
 def normalized(path):
     # normpath, not resolve: the release worktree may be a symlink or missing.
     return os.path.normpath(os.path.abspath(path))
@@ -204,7 +220,7 @@ def main(argv):
         problems = [problem]
     else:
         problems = settings_problems(settings) + check_command_problems(settings)
-    problems += claude_md_problems() + workflow_problems()
+    problems += claude_md_problems() + workflow_problems() + drift_problems()
     if problems:
         sys.exit("\n".join(problems))
 

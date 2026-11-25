@@ -2,18 +2,24 @@
 set -euo pipefail
 
 # Opens the pull request that moves the project in the working directory to the newest
-# release of the pipeline (bump.sh), or prints that it is on it already.
+# release of the pipeline (bump.sh), or prints that it is on it already. Pre-releases
+# count only with --pre.
 host=$(cd "$(dirname "$0")" && pwd)
 sub=.claude/skills/pipeline
 pin=.claude/pipeline-release
 fail() { echo "update-pipeline: $*" >&2; exit 1; }
 
-[ $# -eq 0 ] || fail "usage: update-pipeline.sh"
+filter=(--exclude-drafts --exclude-pre-releases)
+case "$*" in
+  "") ;;
+  --pre) filter=(--exclude-drafts) ;;
+  *) fail "usage: update-pipeline.sh [--pre]" ;;
+esac
 reason=$("$host/require-project-root.sh") || fail "$reason"
 url=$(sed -n 's/^ *"repository": *"\([^"]*\)".*/\1/p' "$host/../.claude-plugin/plugin.json")
 url=${url%/}
 repo=${url#https://github.com/}
-newest=$(gh release list --repo "$repo" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""') \
+newest=$(gh release list --repo "$repo" "${filter[@]}" --limit 1 --json tagName --jq '.[0].tagName // ""') \
   || fail "listing the releases of $repo failed"
 [ -n "$newest" ] || fail "$repo has no release"
 
