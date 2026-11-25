@@ -6,7 +6,8 @@ Without `sync` it fails unless it does; the `agent-review` check runs this.
 `sync` brings the latest `agent-review` run of the `pull_request` event on the head
 commit in line with the verdict: it waits while the run is not completed and re-runs
 it if its result differs. Prints `green`, `red <run url>` or `missing`; exits 1
-unless the run ends green.
+unless the run ends in line with the verdict, so a red run after a review without
+an approve is no failure.
 
 Usage:
   agent-review.py <pr> <head_sha>
@@ -103,19 +104,20 @@ def rerun(run):
 def sync(pr, head_sha):
     run = latest_run(head_sha)
     if run is None:
-        return "missing"
+        return "missing", False
     green = wait(run)
-    if green != approved(reviews(pr), head_sha):
+    approve = approved(reviews(pr), head_sha)
+    if green != approve:
         green = rerun(run) and wait(run)
-    return "green" if green else f"red {run['url']}"
+    return ("green" if green else f"red {run['url']}"), green == approve
 
 
 def main(argv):
     match argv:
         case ["sync", pr, head_sha]:
-            result = sync(pr, head_sha)
+            result, in_line = sync(pr, head_sha)
             print(result)
-            if result != "green":
+            if not in_line:
                 sys.exit(1)
         case [pr, head_sha] if pr != "sync":
             if not approved(reviews(pr), head_sha):

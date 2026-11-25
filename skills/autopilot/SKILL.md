@@ -110,7 +110,7 @@ An issue carries exactly one status label. Setting one removes the others (`gh i
    When a `changes requested` raises `review_rounds` to 3: send `#<n> 3 Review-Runden gelaufen, noch nicht approved` and continue with `fix-review` without waiting. To 5 or more: set `step: "fix-review"`, send a summary of the open review findings and park with the reason `Review-Limit`; `review_rounds` stays in the entry, so every further rejected round parks it again. Reset `attempts` and `failure` on every step change.
 7. Run `merge-default-branch.py`. `merged`: `git push origin <branch>`, continue with `review-issue` (`review_rounds` unchanged). `conflict`: Conflict below. Any other failure: Failure.
    Run `watch-ci.py <branch> <head sha>`. Non-zero exit (`red <run url>` or `missing`): Failure, with the output in the summary.
-   Then run `agent-review.py sync <pr> <head sha>`: it exits 0 only when the latest review on the head commit is an approve and the required check `agent-review` is green, re-running a run of the push that turned red before the review (non-zero exit: Failure, with the output in the summary).
+   Then run `agent-review.py sync <pr> <head sha>`: it re-runs a run of the push that turned red before the review and prints `green` only when the latest review on the head commit is an approve and the required check `agent-review` is green (any other output or a non-zero exit: Failure, with the output in the summary).
    Then run `open-review-threads.py <pr>` (non-zero exit: Failure). A non-empty list counts as `changes requested` (`review_rounds` + 1, same 3/5 handling) and continues with `fix-review` passing `Offene Review-Threads: <url> <url> ...`.
 8. Set the status label and continue with Merge.
 

@@ -168,14 +168,24 @@ def test_sync_reruns_green_run_after_changes_requested(monkeypatch, capsys, sync
         monkeypatch, [APPROVE, CHANGES], [RUN], watch_exits=[0, 1], attempts=[2]
     )
 
-    assert run_sync(sync_gate, capsys) == (1, f"red {RUN['url']}\n")
+    assert run_sync(sync_gate, capsys) == (0, f"red {RUN['url']}\n")
     assert ["run", "rerun"] in commands(calls)
+
+
+def test_sync_fails_when_rerun_stays_green_after_changes_requested(
+    monkeypatch, capsys, sync_gate
+):
+    fake_sync_gh(
+        monkeypatch, [APPROVE, CHANGES], [RUN], watch_exits=[0, 0], attempts=[2]
+    )
+
+    assert run_sync(sync_gate, capsys) == (1, "green\n")
 
 
 def test_sync_keeps_red_run_without_approve(monkeypatch, capsys, sync_gate):
     calls = fake_sync_gh(monkeypatch, [CHANGES], [RUN], watch_exits=[1])
 
-    assert run_sync(sync_gate, capsys) == (1, f"red {RUN['url']}\n")
+    assert run_sync(sync_gate, capsys) == (0, f"red {RUN['url']}\n")
     assert ["run", "rerun"] not in commands(calls)
 
 
