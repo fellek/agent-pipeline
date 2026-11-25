@@ -43,4 +43,6 @@ jobs:
           [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match version $version of plugin.json" >&2; exit 1; }
           flag=()
           [ "$PRERELEASE" != true ] || flag=(--prerelease)
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes "${flag[@]}"
+          . host/versions.sh
+          notes="Getestet mit Claude Code $claude_code und dem Telegram-Plugin $telegram_plugin."
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes "$notes" --generate-notes "${flag[@]}"
