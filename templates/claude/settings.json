@@ -28,6 +28,8 @@
       "Bash(merge-default-branch.py*)",
       "Bash(open-review-threads.py*)",
       "Bash(pipeline-metrics.py*)",
+      "Bash(release-changed.sh*)",
+      "Bash(.claude/skills/pipeline/host/update-pipeline.sh*)",
       "Bash(telegram-send.py*)",
       "Bash(watch-ci.py*)",
       "mcp__plugin_telegram_telegram",
