@@ -22,5 +22,5 @@ If set, check that cause first and do not repeat the same approach.
    - affected files
    - tests to add or change
    - for architecture decisions: 2 to 3 options with pros and cons and a recommendation
-   - open questions, handled as described in CLAUDE.md under "Autopilot operation"
-4. End with the result block from CLAUDE.md: `needs_input` if a question for the maintainer remains, otherwise `done`.
+   - open questions, handled as described in `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md` under "Autopilot operation"
+4. End with the result block from `${CLAUDE_PLUGIN_ROOT}/rules/workflow.md`: `needs_input` if a question for the maintainer remains, otherwise `done`.
