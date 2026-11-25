@@ -12,6 +12,9 @@ on:
         description: Mark as pre-release
         type: boolean
         default: true
+      notes:
+        description: Upgrade notes, placed before the generated notes
+        required: false
 
 permissions:
   contents: read
@@ -38,6 +41,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
           PRERELEASE: ${{ inputs.prerelease }}
+          UPGRADE: ${{ inputs.notes }}
         run: |
           version=$(jq -r .version .claude-plugin/plugin.json)
           [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match version $version of plugin.json" >&2; exit 1; }
@@ -45,4 +49,5 @@ jobs:
           [ "$PRERELEASE" != true ] || flag=(--prerelease)
           . host/versions.sh
           notes="Getestet mit Claude Code $claude_code und dem Telegram-Plugin $telegram_plugin."
+          [ -z "$UPGRADE" ] || notes="$UPGRADE"$'\n\n'"$notes"
           gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes "$notes" --generate-notes "${flag[@]}"
