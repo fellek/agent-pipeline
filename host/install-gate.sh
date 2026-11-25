@@ -4,7 +4,7 @@ set -euo pipefail
 # Sets up the gate of the host (host/gate.py) for the autopilot of Linux user <user>
 # on GitHub repository <owner/repo>, as root. Reads the GitHub token of the project
 # from stdin; an empty one keeps the stored token. Run it again after a release that
-# changes host/gate.py, host/gate-review.md, bin/attestation.py, bin/trust.py or rules/workflow.md.
+# changes host/gate.py, host/gh-shim.py, host/gate-review.md, bin/attestation.py, bin/trust.py or rules/workflow.md.
 host=$(cd "$(dirname "$0")" && pwd)
 plugin=${host%/host}
 # Prefix of the system paths, for the tests only.
@@ -64,10 +64,7 @@ mv "$sudoers.tmp" "$sudoers"
 
 # gh and git of the autopilot reach GitHub only through the gate.
 dir "$home/.local/bin" 0755 "$user:"
-cat >"$home/.local/bin/gh" <<'SH'
-#!/bin/sh
-exec sudo -n -u pipeline-gate /opt/pipeline/gate gh "$@"
-SH
+cp "$host/gh-shim.py" "$home/.local/bin/gh"
 file "$home/.local/bin/gh" 0755 "$user:"
 transport='ext::sudo -n -u pipeline-gate /opt/pipeline/gate %S'
 config=$home/.gitconfig

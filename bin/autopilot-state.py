@@ -9,12 +9,17 @@ background tasks and stops them.
 
 Events:
   start [<label>]        the skill was invoked (default label: ready)
-  telegram <chat_id>     a message of the maintainer, its text on stdin
+  telegram <chat_id>     a message of the maintainer, its text in EVENT_TEXT
   started <task_id>      the fork or background task of the last action started
   done <task_id> [<tokens> <duration_ms>]
-                         a fork or background task ended; a fork's result on
-                         stdin, its usage from the task notification
+                         a fork or background task ended; a fork's result in
+                         EVENT_TEXT, its usage from the task notification
   stopped <task_id>      the task of a `stop` action was stopped
+
+EVENT_TEXT is .pipeline/event.txt, which the orchestrator writes with its Write
+tool and this deletes after reading. Text on stdin would need a heredoc, and a
+redirect keeps the whole Bash call in the sandbox, where `gh` cannot reach the
+gate.
 
 Actions, one JSON object per line:
   {"skill": <name>, "args": <args>}   run the skill via the Skill tool, then `started`
@@ -51,6 +56,7 @@ def pipeline_dir():
 
 
 PIPELINE = pipeline_dir()
+EVENT_TEXT = "event.txt"
 PLUGIN = Path(__file__).resolve().parents[1]
 MAX_ATTEMPTS = 3
 REVIEW_INFO_ROUNDS = 3
@@ -420,6 +426,8 @@ class Autopilot:
     def on_start(self, label):
         # Tasks end with the session; after a reboot the pid may be another process.
         (PIPELINE / "tasks" / "poller.pid").unlink(missing_ok=True)
+        # A text left by a failed call: the Write tool overwrites only a file it has read.
+        (PIPELINE / EVENT_TEXT).unlink(missing_ok=True)
         self.s["poller"] = None
         self.s["retry"] = None
         self.run("release-changed.sh", "record")
@@ -1513,6 +1521,17 @@ def load():
     return json.loads(path.read_text()) if path.exists() else {}
 
 
+def read_event_text():
+    path = PIPELINE / EVENT_TEXT
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return ""
+    # Deleted so the next event cannot pick up a stale text.
+    path.unlink()
+    return text
+
+
 def main(argv):
     match argv:
         case [
@@ -1528,7 +1547,7 @@ def main(argv):
                 and all(a.isdigit() for a in args[1:])
             )
         ):
-            text = sys.stdin.read() if event in ("telegram", "done") else ""
+            text = read_event_text() if event in ("telegram", "done") else ""
             autopilot = Autopilot(load())
             autopilot.handle(event, args, text)
             autopilot.save()

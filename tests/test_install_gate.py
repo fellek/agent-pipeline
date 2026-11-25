@@ -88,7 +88,7 @@ def test_sudoers_lets_the_user_run_only_the_gate(install):
 def test_gh_and_git_of_the_user_go_through_the_gate(install):
     _result, _root, home, owners = install("app", "o/app")
     shim = home / ".local" / "bin" / "gh"
-    assert "exec sudo -n -u pipeline-gate /opt/pipeline/gate gh" in shim.read_text()
+    assert shim.read_text() == (ROOT / "host" / "gh-shim.py").read_text()
     assert owners[str(shim)] == "app:"
     config = subprocess.run(
         ["git", "config", "--file", str(home / ".gitconfig"), "--list"],

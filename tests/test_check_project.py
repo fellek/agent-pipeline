@@ -361,7 +361,8 @@ def test_template_runs_the_pipeline_commands_outside_the_sandbox():
     settings = json.loads((TEMPLATES / "claude" / "settings.json").read_text())
     allow = [r[5:-1] for r in settings["permissions"]["allow"] if r.startswith("Bash(")]
     excluded = settings["sandbox"]["excludedCommands"]
-    assert set(allow) <= set(excluded)
+    # Writing a text for gh needs a heredoc, which keeps the call in the sandbox.
+    assert set(allow) - {"cat > .pipeline/*"} <= set(excluded)
     # gh goes through sudo to the gate, which fails inside the sandbox.
     assert "gh *" in excluded
 
