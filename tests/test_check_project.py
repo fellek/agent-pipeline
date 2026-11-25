@@ -348,7 +348,8 @@ def test_fails_without_sandbox(app):
     del data["sandbox"]
     settings.write_text(json.dumps(data))
 
-    assert len(check(app).stderr.strip().splitlines()) == len(SANDBOX_SWITCHES)
+    lines = check(app).stderr.strip().splitlines()
+    assert len(lines) == len(SANDBOX_SWITCHES) + len(DENIED_READS)
 
 
 def test_template_runs_the_pipeline_commands_outside_the_sandbox():
@@ -383,3 +384,32 @@ def test_checks_the_required_workflows(app, line, problem):
 def test_accepts_quoted_workflow_names(app):
     (app / ".github" / "workflows" / "ci.yml").write_text("name: 'CI'\n")
     assert check(app).returncode == 0
+
+
+DENIED_READS = json.loads((TEMPLATES / "claude" / "settings.json").read_text())[
+    "sandbox"
+]["filesystem"]["denyRead"]
+
+
+def test_template_keeps_the_credentials_from_sandboxed_commands():
+    settings = json.loads((TEMPLATES / "claude" / "settings.json").read_text())
+    assert {"~/.config/gh", "~/.ssh", "~/.claude/.credentials.json"} <= set(
+        DENIED_READS
+    )
+    deny = settings["permissions"]["deny"]
+    assert {"Read(~/.config/gh/**)", "Read(~/.ssh/**)", "Bash(gh auth*)"} <= set(deny)
+
+
+@pytest.mark.parametrize("path", DENIED_READS)
+def test_fails_without_a_denied_read(app, path):
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["sandbox"]["filesystem"]["denyRead"].remove(path)
+    settings.write_text(json.dumps(data))
+
+    result = check(app)
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        f".claude/settings.json lacks sandbox.filesystem.denyRead: {path}"
+    )
