@@ -1684,3 +1684,60 @@ def test_latest_setprio_decides_the_plan(pilot, plan, kept):
     pilot.result("autopilot-poll.py", "next", out="")
     finish(pilot, result(plan=plan))
     assert pilot.state["plan_skip"] == kept
+
+
+# Budget
+
+
+def test_issue_budget_parks_the_issue(pilot):
+    at_step(pilot, "plan-issue", fork_runs=15)
+    pilot.result("autopilot-poll.py", "next", out="")
+    actions = finish(pilot, result())
+    assert "#7 Budget erreicht: 15 Fork-Läufe" in pilot.texts()
+    assert pilot.state["parked"][0]["reason"] == "Budget"
+    assert pilot.state["parked"][0]["fork_runs"] == 15
+    assert not any("skill" in action for action in actions)
+
+
+def test_each_started_step_counts_for_the_issue_and_the_day(pilot):
+    at_step(pilot, "plan-issue", fork_runs=3, day=pilot.module.now()[:10], day_forks=9)
+    finish(pilot, result())
+    assert pilot.state["fork_runs"] == 4
+    assert pilot.state["day_forks"] == 10
+
+
+def test_day_budget_pauses_and_weiter_grants_more(pilot):
+    at_step(pilot, "plan-issue", day=pilot.module.now()[:10], day_forks=50)
+    actions = finish(pilot, result())
+    assert pilot.sent[-1] == (
+        "Tagesbudget erreicht: 50 Fork-Läufe heute, weiter gibt 50 weitere frei",
+        ("weiter", "status"),
+    )
+    assert pilot.state["paused"] is True
+    assert pilot.state["step"] == "issue"
+    assert not any("skill" in action for action in actions)
+    actions = pilot.event("telegram", "1", text="weiter")
+    assert actions[0]["skill"] == "pipeline:issue"
+    assert pilot.state["day_forks"] == 1
+
+
+def test_day_budget_starts_again_on_a_new_day(pilot):
+    at_step(pilot, "plan-issue", day="2000-01-01", day_forks=50)
+    actions = finish(pilot, result())
+    assert actions[0]["skill"] == "pipeline:issue"
+    assert pilot.state["day"] == pilot.module.now()[:10]
+    assert pilot.state["day_forks"] == 1
+
+
+def test_resumed_budget_park_gets_a_new_budget(pilot):
+    pilot.state = {
+        "parked": [parked(reason="Budget", fork_runs=15, question=None)],
+    }
+    pilot.result(
+        "autopilot-poll.py",
+        "check",
+        out=json.dumps({"type": "comment", "number": 4, "body": "go on"}),
+    )
+    actions = pilot.event("start", "")
+    assert actions[0]["skill"] == "pipeline:plan-issue"
+    assert pilot.state["fork_runs"] == 1

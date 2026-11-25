@@ -77,6 +77,8 @@ ISSUE_FIELDS = {
     "question": None,
     "events_since": None,
     "attempts_per_step": {},
+    # Started forks of the issue, against ISSUE_FORKS.
+    "fork_runs": 0,
     "questions": 0,
     "failure": None,
     "task_id": None,
@@ -100,6 +102,9 @@ DEFAULT = {
     "pending": None,
     # Issues whose setprio needs no plan-issue.
     "plan_skip": [],
+    # Started forks of the UTC day, against DAY_FORKS.
+    "day": None,
+    "day_forks": 0,
 }
 # Fields a parked entry keeps of the state.
 PARKED_FIELDS = (
@@ -110,11 +115,15 @@ PARKED_FIELDS = (
     "review_rounds",
     "sync_rounds",
     "attempts_per_step",
+    "fork_runs",
     "questions",
     "events_since",
     "question",
     "failure",
 )
+# Attempts reset with each step, so these bound the forks of an issue and a day.
+ISSUE_FORKS = 15
+DAY_FORKS = 50
 CI_DETAILS = {
     "missing": "kein CI-Lauf gefunden",
     "timeout": "CI nach 45 Minuten nicht fertig",
@@ -562,6 +571,9 @@ class Autopilot:
         for field in PARKED_FIELDS:
             if field != "question":
                 self.s[field] = entry.get(field, ISSUE_FIELDS[field])
+        if entry["reason"] == "Budget":
+            # The maintainer's answer grants a new budget.
+            self.s["fork_runs"] = 0
         self.s.update(pr=pr, waiting_for=None, question=None)
         self.log("resume")
         self.run_step(entry["answer"])
@@ -581,6 +593,7 @@ class Autopilot:
         if self.s["question"]:
             # `weiter` after a blocked search.
             self.search_answer(count=False)
+        self.check_budget()
         if step != "setprio":
             self.set_label(self.s["issue"], STEP_LABELS[step])
         counts = self.s["attempts_per_step"]
@@ -598,6 +611,28 @@ class Autopilot:
 
     def background(self, task):
         self.act(background=f"autopilot-task.py {task}", timeout=BACKGROUND_MS)
+
+    def check_budget(self):
+        n = self.s["issue"]
+        if self.s["fork_runs"] >= ISSUE_FORKS:
+            self.send(f"#{n} Budget erreicht: {self.s['fork_runs']} Fork-Läufe")
+            self.park("Budget")
+        today = now()[:10]
+        if self.s["day"] != today:
+            self.s.update(day=today, day_forks=0)
+        if self.s["day_forks"] >= DAY_FORKS:
+            # `weiter` grants the next DAY_FORKS.
+            self.s["day_forks"] = 0
+            self.send(
+                f"Tagesbudget erreicht: {DAY_FORKS} Fork-Läufe heute, "
+                f"weiter gibt {DAY_FORKS} weitere frei",
+                "weiter",
+                "status",
+            )
+            self.s.update(paused=True, waiting_for="resume")
+            self.wait()
+        self.s["fork_runs"] += 1
+        self.s["day_forks"] += 1
 
     def start_skill(self, step, first, second):
         quoted = " ".join(
@@ -1318,6 +1353,8 @@ class Autopilot:
             self.s["parked"].remove(entry)
             for field in PARKED_FIELDS:
                 self.s[field] = entry.get(field, ISSUE_FIELDS[field])
+            if entry["reason"] == "Budget":
+                self.s["fork_runs"] = 0
             self.s["question"] = None
             if lookup and lookup["pr"]:
                 self.s["pr"] = lookup["pr"]
