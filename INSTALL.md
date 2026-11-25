@@ -201,7 +201,7 @@ Zustand, Log und Bildschirm der Session; dann der Dienst, der `active (running)`
 XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user status 'autopilot-*'
 ```
 
-Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Label.
+Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Auswahl-Label.
 
 ## Weiteres Projekt auf demselben Host
 
