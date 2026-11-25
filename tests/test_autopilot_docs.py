@@ -55,3 +55,15 @@ def test_install_names_every_prerequisite_of_start_script():
     for command in [*commands.split(), "python3"]:
         assert f"`{command}`" in install
     assert f"`claude` (mindestens {min_claude})" in install
+
+
+def test_pipeline_finding_reaches_maintainer():
+    rules = (ROOT / "rules" / "workflow.md").read_text()
+    skill = (ROOT / "skills" / "autopilot" / "SKILL.md").read_text()
+    result_block = rules.split("```")[1]
+    assert "\nPIPELINE_FINDING: <comment url>" in result_block
+    assert "`PIPELINE_FINDING` line" in rules
+    assert (
+        "`PIPELINE_FINDING: <comment url>` line, send "
+        "`#<n> Pipeline-Befund: <comment url>`" in skill
+    )
