@@ -15,7 +15,12 @@ def thread(url, resolved=False, association="OWNER"):
         "isResolved": resolved,
         "path": "a.py",
         "line": 3,
-        "comments": {"nodes": [{"url": url, "authorAssociation": association}]},
+        "comments": {
+            "nodes": [
+                {"url": url, "authorAssociation": association, "body": "b"},
+                {"url": "x", "authorAssociation": "NONE", "body": "stranger"},
+            ]
+        },
     }
 
 
@@ -40,8 +45,8 @@ def test_returns_unresolved_threads_across_pages(monkeypatch, gate):
     fake_gh(monkeypatch, [page(thread("u1"), thread("r", True)), page(thread("u2"))])
 
     assert gate.unresolved(gate.threads(66)) == [
-        {"url": "u1", "path": "a.py", "line": 3},
-        {"url": "u2", "path": "a.py", "line": 3},
+        {"url": "u1", "path": "a.py", "line": 3, "comments": ["b"]},
+        {"url": "u2", "path": "a.py", "line": 3, "comments": ["b"]},
     ]
 
 
@@ -62,7 +67,7 @@ def test_main_prints_unresolved(monkeypatch, capsys, gate):
     gate.main(["66"])
 
     assert json.loads(capsys.readouterr().out) == [
-        {"url": "u1", "path": "a.py", "line": 3}
+        {"url": "u1", "path": "a.py", "line": 3, "comments": ["b"]}
     ]
 
 

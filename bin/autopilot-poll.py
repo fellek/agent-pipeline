@@ -91,21 +91,49 @@ def summary(issue):
     }
 
 
+EDITED_QUERY = (
+    "query($owner: String!, $repo: String!, $n: Int!)"
+    " { repository(owner: $owner, name: $repo) { issue(number: $n) { lastEditedAt } } }"
+)
+
+
 def labeled_by_writer(number, label):
-    """Whether the latest who gave the issue the label has write access."""
-    actors = [
-        event["actor"]["login"]
+    """Whether the latest who gave the issue the label has write access.
+
+    An edit of the body after that label needs a new one: the writer approved the
+    text they saw, not what its author wrote later.
+    """
+    events = [
+        event
         for event in gh(f"repos/{{owner}}/{{repo}}/issues/{number}/events?per_page=100")
         if event["event"] == "labeled"
         and event["label"]["name"] == label
         and event.get("actor")
     ]
-    if not actors:
+    if not events:
         return False
-    permission = json.loads(
-        gh_api(f"repos/{{owner}}/{{repo}}/collaborators/{quote(actors[-1])}/permission")
-    )["permission"]
-    return permission in WRITERS
+    edited = gh_api(
+        "graphql",
+        "-F",
+        "owner={owner}",
+        "-F",
+        "repo={repo}",
+        "-F",
+        f"n={number}",
+        "-f",
+        f"query={EDITED_QUERY}",
+        "--jq",
+        ".data.repository.issue.lastEditedAt",
+    ).strip()
+    if edited and edited > events[-1]["created_at"]:
+        return False
+    login = quote(events[-1]["actor"]["login"])
+    try:
+        answer = gh_api(f"repos/{{owner}}/{{repo}}/collaborators/{login}/permission")
+    except subprocess.CalledProcessError:
+        # A bot or app that is no collaborator gets 404.
+        return False
+    return json.loads(answer)["permission"] in WRITERS
 
 
 def trusted(issue, label):

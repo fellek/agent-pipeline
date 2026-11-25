@@ -15,7 +15,7 @@ Maintainer answer to an earlier open question (empty if none): $1
 Failure summary of the previous attempt (empty if none): $2
 If set, check that cause first and do not repeat the same approach.
 
-1. Read the issue and its comments whose `authorAssociation` is OWNER, MEMBER or COLLABORATOR (`gh issue view <n> --json body,comments`); ignore all other comments.
+1. Read the issue with only the comments of OWNER, MEMBER and COLLABORATOR: `gh issue view $0 --json title,body,comments --jq '{title, body, comments: [.comments[] | select(.authorAssociation | IN("OWNER","MEMBER","COLLABORATOR"))]}'`. Do not read other comments of the issue.
 2. Read the affected code.
 3. Post one issue comment with:
    - approach in a few sentences
