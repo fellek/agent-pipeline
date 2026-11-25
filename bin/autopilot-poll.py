@@ -83,16 +83,9 @@ def maintainer_events(items, number, since):
     ]
 
 
-def dependencies(number, relation):
-    return gh(f"repos/{{owner}}/{{repo}}/issues/{number}/dependencies/{relation}")
-
-
 def has_open(issue, relation):
-    # The list of issues counts the open dependencies, which saves a call per issue.
-    if counts := issue.get("issue_dependencies_summary"):
-        return counts[relation] > 0
-    deps = dependencies(issue["number"], relation)
-    return any(dep["state"] == "open" for dep in deps)
+    # The issue list counts the open dependencies, which saves a call per issue.
+    return issue["issue_dependencies_summary"][relation] > 0
 
 
 def label_names(issue):

@@ -10,7 +10,6 @@ SINCE = "2026-11-13T10:00:00Z"
 @pytest.fixture
 def poll(monkeypatch):
     module = load_script("autopilot-poll.py")
-    monkeypatch.setattr(module, "dependencies", lambda number, relation: [])
     monkeypatch.setattr(module, "maintainer", lambda: "maintainer")
     return module
 
@@ -90,12 +89,14 @@ def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     assert [e["number"] for e in events(capsys)] == [55]
 
 
-def issue(number, *labels, association="OWNER"):
+def issue(number, *labels, association="OWNER", blocked_by=0, blocking=0):
+    """An issue of the list; the summary counts its open dependencies."""
     return {
         "number": number,
         "title": "Neu",
         "labels": [{"name": n} for n in labels],
         "author_association": association,
+        "issue_dependencies_summary": {"blocked_by": blocked_by, "blocking": blocking},
     }
 
 
@@ -131,16 +132,8 @@ def test_issue_with_skipped_label_is_ignored(monkeypatch, capsys, poll, label):
     assert [e["number"] for e in events(capsys)] == [61]
 
 
-def fake_dependencies(monkeypatch, poll, **states):
-    def dependencies(number, relation):
-        return [{"state": s} for s in states.get(f"{relation}_{number}", [])]
-
-    monkeypatch.setattr(poll, "dependencies", dependencies)
-
-
 def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
-    fake_gh(monkeypatch, poll, [issue(60, "ready"), issue(61, "ready")])
-    fake_dependencies(monkeypatch, poll, blocked_by_60=["closed", "open"])
+    fake_gh(monkeypatch, poll, [issue(60, "ready", blocked_by=1), issue(61, "ready")])
 
     poll.check([("new_issue", "ready")])
 
@@ -149,16 +142,17 @@ def test_issue_with_open_blocker_is_not_reported(monkeypatch, capsys, poll):
 
 @pytest.mark.parametrize(
     ("blocker", "chosen", "labels"),
-    [("open", 61, ["ready"]), ("closed", 60, ["ready", "enhancement"])],
+    [(1, 61, ["ready"]), (0, 60, ["ready", "enhancement"])],
     ids=["open", "closed"],
 )
 def test_next_skips_issue_with_open_blocker(
     monkeypatch, capsys, poll, blocker, chosen, labels
 ):
     calls = fake_gh(
-        monkeypatch, poll, [issue(61, "ready"), issue(60, "ready", "enhancement")]
+        monkeypatch,
+        poll,
+        [issue(61, "ready"), issue(60, "ready", "enhancement", blocked_by=blocker)],
     )
-    fake_dependencies(monkeypatch, poll, blocked_by_60=[blocker])
 
     poll.main(["next", "ready"])
 
@@ -167,15 +161,20 @@ def test_next_skips_issue_with_open_blocker(
 
 
 @pytest.mark.parametrize(
-    ("blocked", "chosen"), [("open", 61), ("closed", 60)], ids=["open", "closed"]
+    ("blocked", "chosen"), [(1, 61), (0, 60)], ids=["open", "closed"]
 )
 def test_next_prefers_issue_blocking_an_open_issue(
     monkeypatch, capsys, poll, blocked, chosen
 ):
     fake_gh(
-        monkeypatch, poll, [issue(60, "ready"), issue(61, "ready"), issue(62, "ready")]
+        monkeypatch,
+        poll,
+        [
+            issue(60, "ready"),
+            issue(61, "ready", blocking=blocked),
+            issue(62, "ready", blocking=blocked),
+        ],
     )
-    fake_dependencies(monkeypatch, poll, blocking_61=[blocked], blocking_62=[blocked])
 
     poll.main(["next", "ready"])
 
@@ -241,15 +240,6 @@ def test_next_selects_issue_with_selection_label_only(monkeypatch, capsys, poll)
     poll.main(["untriaged", "batch-1"])
 
     assert [e["number"] for e in events(capsys)] == [60]
-
-
-def test_dependencies_read_relation_endpoint(monkeypatch):
-    poll = load_script("autopilot-poll.py")
-    calls = fake_gh(monkeypatch, poll, [])
-
-    poll.dependencies(60, "blocked_by")
-
-    assert calls == ["repos/{owner}/{repo}/issues/60/dependencies/blocked_by"]
 
 
 def test_keeps_polling_without_events(monkeypatch, capsys, poll):
@@ -515,15 +505,9 @@ def test_team_issue_needs_no_label_check(monkeypatch, poll):
     assert calls == []
 
 
-def summarized(number, blocked_by=0, blocking=0):
-    counts = {"blocked_by": blocked_by, "blocking": blocking}
-    return {**issue(number, "ready"), "issue_dependencies_summary": counts}
-
-
 def test_idle_poll_costs_one_call_whatever_the_candidates(monkeypatch, poll):
-    blocked = [summarized(n, blocked_by=1) for n in range(60, 110)]
+    blocked = [issue(n, "ready", blocked_by=1) for n in range(60, 110)]
     calls = fake_gh(monkeypatch, poll, blocked)
-    monkeypatch.setattr(poll, "dependencies", lambda *args: pytest.fail("called"))
 
     assert poll.poll([("new_issue", "ready")]) == []
     assert len(calls) == 1
@@ -536,16 +520,3 @@ def test_poll_stops_at_the_first_candidate(monkeypatch, poll):
 
     assert [e["number"] for e in poll.poll([("new_issue", "ready")])] == [60]
     assert calls[1:] == ["repos/{owner}/{repo}/issues/60/events?per_page=100"]
-
-
-def test_next_reads_the_dependency_counts_of_the_list(monkeypatch, capsys, poll):
-    fake_gh(
-        monkeypatch,
-        poll,
-        [summarized(60), summarized(61, blocking=1), summarized(62, blocked_by=1)],
-    )
-    monkeypatch.setattr(poll, "dependencies", lambda *args: pytest.fail("called"))
-
-    poll.main(["next", "ready"])
-
-    assert [e["number"] for e in events(capsys)] == [61]
