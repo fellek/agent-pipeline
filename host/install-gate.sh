@@ -4,7 +4,7 @@ set -euo pipefail
 # Sets up the gate of the host (host/gate.py) for the autopilot of Linux user <user>
 # on GitHub repository <owner/repo>, as root. Reads the GitHub token of the project
 # from stdin; an empty one keeps the stored token. Run it again after a release that
-# changes host/gate.py, host/gate-review.md, bin/attestation.py or rules/workflow.md.
+# changes host/gate.py, host/gate-review.md, bin/attestation.py, bin/trust.py or rules/workflow.md.
 host=$(cd "$(dirname "$0")" && pwd)
 plugin=${host%/host}
 # Prefix of the system paths, for the tests only.
@@ -31,7 +31,7 @@ file() { chmod "$2" "$1"; chown "$3" "$1"; }
 dir "$root/opt/pipeline" 0755 root:root
 cp "$host/gate.py" "$root/opt/pipeline/gate"
 file "$root/opt/pipeline/gate" 0755 root:root
-for source in "$plugin/bin/attestation.py" "$host/gate-review.md" "$plugin/rules/workflow.md"; do
+for source in "$plugin/bin/attestation.py" "$plugin/bin/trust.py" "$host/gate-review.md" "$plugin/rules/workflow.md"; do
   cp "$source" "$root/opt/pipeline/"
   file "$root/opt/pipeline/$(basename "$source")" 0644 root:root
 done

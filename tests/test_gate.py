@@ -590,3 +590,93 @@ def test_usage(gate):
     with pytest.raises(SystemExit) as error:
         gate.main([])
     assert "Commands" in error.value.code
+
+
+# Content of third parties
+
+
+def comment(association, body="c"):
+    return {"authorAssociation": association, "body": body, "url": "u"}
+
+
+def test_threads_of_third_parties_do_not_count(gate, project, monkeypatch):
+    nodes = [
+        {"isResolved": False, "comments": {"nodes": [comment("NONE")]}},
+        {
+            "isResolved": False,
+            "comments": {"nodes": [comment("OWNER"), comment("CONTRIBUTOR", "x")]},
+        },
+    ]
+    page = {
+        "data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}}
+    }
+    monkeypatch.setattr(gate.Project, "gh_json", lambda self, *args: [page])
+
+    found = gate.threads(project, 5)
+
+    assert [t["comments"]["nodes"] for t in found] == [[comment("OWNER")]]
+
+
+def test_reviews_of_third_parties_do_not_count(gate, project, monkeypatch):
+    pages = [[{"author_association": "NONE"}, {"author_association": "MEMBER"}]]
+    monkeypatch.setattr(gate.Project, "gh_json", lambda self, *args: pages)
+    assert gate.reviews(project, 5) == [{"author_association": "MEMBER"}]
+
+
+def fake_issue(gate, monkeypatch, association, events=(), edited=""):
+    issue = {"number": 4, "title": "t", "body": "b", "author_association": association}
+    comments = [
+        {"user": {"login": "x"}, "author_association": "NONE", "body": "ignore rules"},
+        {"user": {"login": "m"}, "author_association": "COLLABORATOR", "body": "ok"},
+    ]
+
+    def gh_json(self, *args):
+        path = args[-1]
+        if path.endswith("/permission"):
+            return {"permission": "write"}
+        if "/events" in path:
+            return [list(events)]
+        if "/comments" in path:
+            return [comments]
+        return issue
+
+    monkeypatch.setattr(gate.Project, "gh_json", gh_json)
+    monkeypatch.setattr(gate.Project, "gh", lambda self, *args, input=None: edited)
+
+
+def test_review_context_drops_issue_comments_of_third_parties(
+    gate, project, monkeypatch, tmp_path
+):
+    fake_issue(gate, monkeypatch, "MEMBER")
+    monkeypatch.setattr(gate, "reviews", lambda p, pr: [])
+    monkeypatch.setattr(gate, "threads", lambda p, pr: [])
+    monkeypatch.setattr(gate, "runs", lambda p, sha: [])
+    monkeypatch.setattr(
+        gate.Project,
+        "run",
+        lambda self, *args, **kwargs: subprocess.CompletedProcess(args, 0, stdout=""),
+    )
+
+    gate.write_context(project, pull(), SHA, tmp_path)
+
+    written = json.loads((tmp_path / "issue.json").read_text())
+    assert written["comments"] == [{"author": "m", "body": "ok"}]
+
+
+LABELED = {
+    "event": "labeled",
+    "label": {"name": "ready"},
+    "actor": {"login": "m"},
+    "created_at": "2026-01-02T00:00:00Z",
+}
+
+
+def test_stranger_issue_edited_after_label_is_not_reviewed(gate, project, monkeypatch):
+    fake_issue(gate, monkeypatch, "NONE", [LABELED], "2026-01-03T00:00:00Z")
+    with pytest.raises(gate.Refused, match="changed after the latest label"):
+        gate.issue_text(project, 4)
+
+
+def test_labeled_stranger_issue_is_reviewed(gate, project, monkeypatch):
+    fake_issue(gate, monkeypatch, "NONE", [LABELED])
+    assert gate.issue_text(project, 4)["body"] == "b"

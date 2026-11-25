@@ -6,6 +6,11 @@ issue to start: open issues with an open blocker are skipped, issues blocking an
 open issue come first, then the lowest number. `untriaged` prints the open
 issues without a status label and without the selection label, for `setprio`.
 
+Only issues of the repository's owner, members and collaborators enter the
+pipeline, so a stranger's issue cannot steer a fork. A stranger's issue becomes a
+candidate only once someone with write access gives it the selection label
+(trust.py); forks read an issue only through issue-text.py.
+
 Usage:
   autopilot-poll.py now
   autopilot-poll.py next <label>
@@ -25,10 +30,13 @@ import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
+import trust
+
 INTERVAL_SECONDS = 60
 MAX_FAILED_POLLS = 3
 SKIPPED_LABELS = {"question", "parked"}
-STATUS_LABELS = SKIPPED_LABELS | {"ready", "in-progress", "in-review", "approved"}
+STATUS_LABELS = trust.STATUS_LABELS
+TRUSTED = trust.TRUSTED
 TARGET_ARITY = {"answer": 2, "new_issue": 1, "patch": 2}
 
 
@@ -85,6 +93,41 @@ def summary(issue):
     }
 
 
+def permission(login):
+    try:
+        answer = gh_api(
+            f"repos/{{owner}}/{{repo}}/collaborators/{quote(login)}/permission"
+        )
+    except subprocess.CalledProcessError:
+        # A bot or app that is no collaborator gets 404.
+        return None
+    return json.loads(answer)["permission"]
+
+
+def labeled_by_writer(number, label):
+    events = gh(f"repos/{{owner}}/{{repo}}/issues/{number}/events?per_page=100")
+    edited = gh_api(
+        "graphql",
+        "-F",
+        "owner={owner}",
+        "-F",
+        "repo={repo}",
+        "-F",
+        f"n={number}",
+        "-f",
+        f"query={trust.EDITED_QUERY}",
+        "--jq",
+        ".data.repository.issue.lastEditedAt",
+    ).strip()
+    return trust.approved(events, edited, permission, label)
+
+
+def trusted(issue, label):
+    return issue["author_association"] in TRUSTED or labeled_by_writer(
+        issue["number"], label
+    )
+
+
 def candidates(label):
     issues = gh(f"repos/{{owner}}/{{repo}}/issues?state=open&labels={quote(label)}")
     return [
@@ -92,6 +135,7 @@ def candidates(label):
         for i in issues
         if "pull_request" not in i
         and not SKIPPED_LABELS & set(label_names(i))
+        and trusted(i, label)
         and not has_open(i["number"], "blocked_by")
     ]
 
@@ -102,7 +146,9 @@ def untriaged(label):
     return [
         summary(i)
         for i in issues
-        if "pull_request" not in i and not excluded & set(label_names(i))
+        if "pull_request" not in i
+        and i["author_association"] in TRUSTED
+        and not excluded & set(label_names(i))
     ]
 
 

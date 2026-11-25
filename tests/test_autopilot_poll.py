@@ -81,8 +81,13 @@ def test_comment_is_ignored(monkeypatch, capsys, poll, ignored):
     assert [e["number"] for e in events(capsys)] == [55]
 
 
-def issue(number, *labels):
-    return {"number": number, "title": "Neu", "labels": [{"name": n} for n in labels]}
+def issue(number, *labels, association="OWNER"):
+    return {
+        "number": number,
+        "title": "Neu",
+        "labels": [{"name": n} for n in labels],
+        "author_association": association,
+    }
 
 
 def test_labeled_issue_only_reported_in_new_issue_mode(monkeypatch, capsys, poll):
@@ -386,3 +391,114 @@ def test_main_parses_target_list(monkeypatch, poll, command):
 def test_main_rejects_invalid_arguments(poll, argv):
     with pytest.raises(SystemExit):
         poll.main(argv)
+
+
+@pytest.mark.parametrize(
+    "association", ["CONTRIBUTOR", "NONE", "FIRST_TIME_CONTRIBUTOR"]
+)
+def test_untriaged_skips_issues_of_strangers(monkeypatch, poll, association):
+    fake_gh(monkeypatch, poll, [issue(60, association=association), issue(61)])
+
+    assert [i["number"] for i in poll.untriaged("ready")] == [61]
+
+
+@pytest.mark.parametrize("association", ["OWNER", "MEMBER", "COLLABORATOR"])
+def test_untriaged_takes_issues_of_the_team(monkeypatch, poll, association):
+    fake_gh(monkeypatch, poll, [issue(60, association=association)])
+
+    assert [i["number"] for i in poll.untriaged("ready")] == [60]
+
+
+def labeled(login, name="ready", at="2026-01-02T00:00:00Z"):
+    return {
+        "event": "labeled",
+        "label": {"name": name},
+        "actor": {"login": login},
+        "created_at": at,
+    }
+
+
+def fake_permissions(monkeypatch, poll, edited="", **permissions):
+    asked = []
+
+    def gh_api(*args):
+        if args[0] == "graphql":
+            return f"{edited}\n"
+        login = args[0].split("/")[-2]
+        asked.append(login)
+        if login not in permissions:
+            raise subprocess.CalledProcessError(1, "gh")
+        return json.dumps({"permission": permissions[login]})
+
+    monkeypatch.setattr(poll, "gh_api", gh_api)
+    return asked
+
+
+@pytest.mark.parametrize(
+    ("label_events", "expected"),
+    [
+        ([], []),
+        ([labeled("maintainer")], [60]),
+        ([labeled("guest")], []),
+        ([labeled("maintainer"), labeled("guest")], []),
+        ([labeled("guest"), labeled("maintainer")], [60]),
+        ([labeled("maintainer", name="bug")], []),
+        ([{"event": "commented", "actor": {"login": "maintainer"}}], []),
+    ],
+    ids=[
+        "never_labeled",
+        "labeled_by_writer",
+        "labeled_by_reader",
+        "relabeled_by_reader",
+        "relabeled_by_writer",
+        "other_label",
+        "other_event",
+    ],
+)
+def test_stranger_issue_is_a_candidate_only_if_a_writer_labeled_it(
+    monkeypatch, poll, label_events, expected
+):
+    calls = fake_gh(
+        monkeypatch, poll, [issue(60, "ready", association="NONE")], label_events
+    )
+    fake_permissions(monkeypatch, poll, maintainer="admin", guest="read")
+
+    assert [i["number"] for i in poll.candidates("ready")] == expected
+    assert calls[1] == "repos/{owner}/{repo}/issues/60/events?per_page=100"
+
+
+@pytest.mark.parametrize(
+    ("edited", "expected"),
+    [
+        ("", [60]),
+        ("2026-01-01T00:00:00Z", [60]),
+        ("2026-01-03T00:00:00Z", []),
+    ],
+    ids=["never_edited", "edited_before_label", "edited_after_label"],
+)
+def test_edit_after_the_label_needs_a_new_label(monkeypatch, poll, edited, expected):
+    fake_gh(
+        monkeypatch,
+        poll,
+        [issue(60, "ready", association="NONE")],
+        [labeled("maintainer")],
+    )
+    fake_permissions(monkeypatch, poll, edited=edited, maintainer="write")
+
+    assert [i["number"] for i in poll.candidates("ready")] == expected
+
+
+def test_label_of_a_bot_does_not_trust(monkeypatch, poll):
+    fake_gh(
+        monkeypatch, poll, [issue(60, "ready", association="NONE")], [labeled("bot")]
+    )
+    fake_permissions(monkeypatch, poll)
+
+    assert poll.candidates("ready") == []
+
+
+def test_team_issue_needs_no_label_check(monkeypatch, poll):
+    calls = fake_gh(monkeypatch, poll, [issue(60, "ready", association="MEMBER")])
+
+    assert [i["number"] for i in poll.candidates("ready")] == [60]
+    assert len(calls) == 1
