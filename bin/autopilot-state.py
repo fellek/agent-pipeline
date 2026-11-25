@@ -98,6 +98,8 @@ DEFAULT = {
     "poller": None,
     "poll_failures": 0,
     "pending": None,
+    # Issues whose setprio needs no plan-issue.
+    "plan_skip": [],
 }
 # Fields a parked entry keeps of the state.
 PARKED_FIELDS = (
@@ -154,6 +156,7 @@ def parse_result(text):
             "VERDICT",
             "OPEN_QUESTIONS",
             "PATCH",
+            "PLAN",
             "PIPELINE_FINDING",
             "NEXT",
         ):
@@ -509,7 +512,11 @@ class Autopilot:
         default = self.to_default()
         branch = f"issue-{issue['number']}-{slug(issue['title'])}"
         self.ok("git", "switch", "-c", branch, default)
-        self.s.update(issue=issue["number"], branch=branch, pr=None, step="plan-issue")
+        skip = issue["number"] in self.s["plan_skip"]
+        if skip:
+            self.s["plan_skip"].remove(issue["number"])
+        step = "issue" if skip else "plan-issue"
+        self.s.update(issue=issue["number"], branch=branch, pr=None, step=step)
 
     def lines(self, *args):
         return [json.loads(line) for line in self.ok(*args).splitlines() if line]
@@ -665,6 +672,11 @@ class Autopilot:
         if step == "setprio":
             if self.s["park"]:
                 return
+            # The latest setprio decides.
+            skip = [n for n in self.s["plan_skip"] if n != self.s["issue"]]
+            if result.get("PLAN") == "skip":
+                skip.append(self.s["issue"])
+            self.s["plan_skip"] = skip
             self.setprio_done()
         elif step == "plan-issue":
             self.change_step("issue")

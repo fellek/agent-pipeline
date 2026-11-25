@@ -39,6 +39,7 @@ VERDICT: approve | changes requested
 OPEN_QUESTIONS:
 1. <question> Options: a) ... b) ... Recommendation: ...
 PATCH: <comment url> (only for a blocked change)
+PLAN: needed | skip (only for setprio)
 PIPELINE_FINDING: <comment url> (only for a finding about the pipeline)
 NEXT: <suggested next step>
 ```
@@ -58,7 +59,6 @@ These apply to commits, PRs, issues, comments and docs, and override any attribu
 ## Rules for new PRs
 
 - Very brief PR descriptions and comments. No conversational padding, no long explanations.
-- Always use a subagent to check for duplicated code added by your PR.
 
 ## Pull request review
 

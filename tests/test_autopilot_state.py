@@ -1501,6 +1501,20 @@ def test_restart_with_a_pending_park_checks_the_refs(pilot):
     assert pilot.state["paused"] is True
 
 
+def test_setprio_without_need_for_a_plan_skips_plan_issue(pilot):
+    at_step(pilot, "setprio", branch=None, pr=None, issue=7)
+    actions = finish(pilot, result(plan="skip"))
+    assert pilot.state["step"] == "issue"
+    assert pilot.state["plan_skip"] == []
+    assert actions[0]["skill"] == "pipeline:issue"
+
+
+def test_setprio_with_need_for_a_plan_plans(pilot):
+    at_step(pilot, "setprio", branch=None, pr=None, issue=7)
+    actions = finish(pilot, result(plan="needed"))
+    assert actions[0]["skill"] == "pipeline:plan-issue"
+
+
 def test_red_ci_goes_to_fix_review_without_a_review(pilot):
     at_review_ci(pilot)
     actions = finish(pilot, out="red https://github.com/o/app/actions/runs/31", code=1)
@@ -1662,3 +1676,11 @@ def test_green_ci_records_the_refs_for_the_review(pilot):
     at_review_ci(pilot)
     finish(pilot, out="green", code=0)
     assert pilot.state["refs"] == ["c" * 40, ""]
+
+
+@pytest.mark.parametrize(("plan", "kept"), [("needed", []), ("skip", [7])])
+def test_latest_setprio_decides_the_plan(pilot, plan, kept):
+    at_step(pilot, "setprio", branch=None, pr=None, issue=7, plan_skip=[7])
+    pilot.result("autopilot-poll.py", "next", out="")
+    finish(pilot, result(plan=plan))
+    assert pilot.state["plan_skip"] == kept
