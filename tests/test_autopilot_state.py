@@ -1110,12 +1110,26 @@ def test_main_writes_the_state_atomically_and_prints_actions(
 ):
     module = pilot.module
     monkeypatch.setattr(module.Autopilot, "run", pilot.run)
-    monkeypatch.setattr(module.sys, "stdin", type("S", (), {"read": lambda self: ""})())
     module.main(["event", "start"])
     state = json.loads((tmp_path / "state.json").read_text())
     assert state["step"] == "plan-issue"
     assert not (tmp_path / "state.json.tmp").exists()
     assert json.loads(capsys.readouterr().out)["skill"] == "pipeline:plan-issue"
+
+
+def test_main_reads_the_event_text_from_the_file_and_deletes_it(
+    pilot, tmp_path, monkeypatch
+):
+    module = pilot.module
+    monkeypatch.setattr(module.Autopilot, "run", pilot.run)
+    at_step(pilot, "issue")
+    (tmp_path / "state.json").write_text(json.dumps(pilot.state))
+    (tmp_path / "event.txt").write_text("hello\n")
+    module.main(["event", "telegram", "42"])
+    assert not (tmp_path / "event.txt").exists()
+    assert pilot.texts() == [
+        "Unbekannter Befehl, help listet alle. Antwort auf eine Rückfrage: #7 <text>"
+    ]
 
 
 def test_main_rejects_unknown_events(pilot):
