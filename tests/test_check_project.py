@@ -12,6 +12,7 @@ DENY = json.loads((TEMPLATES / "claude" / "settings.json").read_text())["permiss
     "deny"
 ]
 RULES_IMPORT = "@.claude/skills/pipeline/rules/workflow.md"
+MISSING_IMPORT = f"CLAUDE.md and .claude/CLAUDE.md lack an import of {RULES_IMPORT[1:]}"
 
 
 @pytest.fixture
@@ -86,7 +87,48 @@ def test_fails_without_rules_import(app, claude_md):
     result = check(app)
 
     assert result.returncode == 1
-    assert f"CLAUDE.md lacks the line {RULES_IMPORT}" in result.stderr
+    assert MISSING_IMPORT in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("path", "line"),
+    [
+        (".claude/CLAUDE.md", "@skills/pipeline/rules/workflow.md"),
+        (".claude/CLAUDE.md", "@./skills/pipeline/rules/../rules/workflow.md"),
+        ("CLAUDE.md", "@./.claude/skills/pipeline/rules/workflow.md"),
+    ],
+)
+def test_accepts_any_import_of_the_release_rules(app, path, line):
+    (app / "CLAUDE.md").unlink()
+    (app / path).write_text(f"# App\n\n{line}\n")
+
+    assert check(app).returncode == 0
+
+
+def test_accepts_import_by_absolute_path(app):
+    (app / "CLAUDE.md").write_text(
+        f"@{app}/.claude/skills/pipeline/rules/workflow.md\n"
+    )
+
+    assert check(app).returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("path", "line"),
+    [
+        (".claude/CLAUDE.md", "@../rules/workflow.md"),
+        (".claude/CLAUDE.md", RULES_IMPORT),
+        ("CLAUDE.md", "@skills/pipeline/rules/workflow.md"),
+    ],
+)
+def test_fails_for_an_import_of_other_rules(app, path, line):
+    (app / "CLAUDE.md").unlink()
+    (app / path).write_text(f"{line}\n")
+
+    result = check(app)
+
+    assert result.returncode == 1
+    assert MISSING_IMPORT in result.stderr
 
 
 def test_reports_all_problems(app):

@@ -2,13 +2,17 @@
 """Check the project in the working directory against the pipeline's requirements.
 
 Fails if .claude/settings.json lacks a deny rule of the pipeline's settings
-template or CLAUDE.md lacks the import of the pipeline's workflow rules.
+template, or if neither CLAUDE.md nor .claude/CLAUDE.md imports the pipeline's
+workflow rules: an @ line whose path, relative to the file it is in, points to
+.claude/skills/pipeline/rules/workflow.md of the project. Only the path counts,
+not whether the file exists, so the check passes without the release checked out.
 
 Usage:
   check-project.py
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -16,8 +20,8 @@ TEMPLATE = (
     Path(__file__).resolve().parents[1] / "templates" / "claude" / "settings.json"
 )
 SETTINGS = Path(".claude/settings.json")
-CLAUDE_MD = Path("CLAUDE.md")
-RULES_IMPORT = "@.claude/skills/pipeline/rules/workflow.md"
+CLAUDE_MDS = (Path("CLAUDE.md"), Path(".claude/CLAUDE.md"))
+RULES = ".claude/skills/pipeline/rules/workflow.md"
 
 
 def deny_rules(path):
@@ -38,11 +42,28 @@ def settings_problems():
     ]
 
 
+def normalized(path):
+    # normpath, not resolve: the release worktree may be a symlink or missing.
+    return os.path.normpath(os.path.abspath(path))
+
+
+def imports_rules(claude_md):
+    if not claude_md.is_file():
+        return False
+    for line in claude_md.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("@") and normalized(
+            claude_md.parent / line[1:]
+        ) == normalized(RULES):
+            return True
+    return False
+
+
 def claude_md_problems():
-    lines = CLAUDE_MD.read_text().splitlines() if CLAUDE_MD.is_file() else []
-    if RULES_IMPORT in (line.strip() for line in lines):
+    if any(imports_rules(path) for path in CLAUDE_MDS):
         return []
-    return [f"{CLAUDE_MD} lacks the line {RULES_IMPORT}"]
+    names = " and ".join(str(path) for path in CLAUDE_MDS)
+    return [f"{names} lack an import of {RULES}"]
 
 
 def main(argv):
