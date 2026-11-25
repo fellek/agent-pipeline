@@ -45,10 +45,9 @@ def test_install_names_every_prerequisite_of_start_script():
     start = (ROOT / "host" / "autopilot-start.sh").read_text()
     install = (ROOT / "INSTALL.md").read_text()
     commands = re.search(r"^for cmd in (.+); do$", start, re.MULTILINE).group(1)
-    min_claude = re.search(r"^min_claude=(\S+)$", start, re.MULTILINE).group(1)
     for command in [*commands.split(), "python3"]:
         assert f"`{command}`" in install
-    assert f"`claude` (mindestens {min_claude})" in install
+    assert "`claude` in der Version aus [`host/versions.sh`]" in install
 
 
 def test_pipeline_finding_reaches_maintainer():

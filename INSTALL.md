@@ -11,10 +11,10 @@ Als root:
 
 Als Projekt-Benutzer:
 
-3. `claude` (mindestens 2.1.239) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`.
+3. `claude` in der Version aus [`host/versions.sh`](host/versions.sh) (Installer mit dieser Version als Argument, siehe die Setup-Doku von Claude Code; ein installiertes `claude` wechselt mit `claude install <version>`) und `bun` (für das Telegram-Plugin) mit ihren Installern installieren; sie landen in `~/.local/bin` und `~/.bun/bin`. Damit `claude` außerhalb des Autopiloten nicht von selbst aktualisiert, in `~/.claude/settings.json` `"env": {"DISABLE_AUTOUPDATER": "1"}` setzen; der Autopilot setzt es selbst. Eine neue Pipeline-Version kann eine andere Version verlangen, dann erneut `claude install <version>`.
 4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken.
 
-`autopilot-start.sh` prüft `claude` samt Version, `git`, `gh`, `sudo`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, das Gate, dass der Benutzer keinen eigenen Token hat, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
+`autopilot-start.sh` prüft `claude` und das Telegram-Plugin auf die Versionen aus `host/versions.sh`, `git`, `gh`, `sudo`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, das Gate, dass der Benutzer keinen eigenen Token hat, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
 
 ## 2. GitHub und Gate (als root)
 
@@ -22,7 +22,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
 
 1. Einen fine-grained Token nur für das Projekt-Repository anlegen, mit den Rechten Contents, Issues und Pull requests (Lesen und Schreiben) sowie Actions und Metadata (Lesen). `gh pr checks` braucht `checks=read`, das fine-grained Tokens nicht anbieten; der Autopilot nutzt deshalb `gh run`.
 2. In einem Klon dieses Repositorys auf dem Release-Tag: `read -rs t && printf '%s\n' "$t" | host/install-gate.sh <benutzer> <owner>/<projekt>`. Es legt `pipeline-gate` an, installiert das Gate unter `/opt/pipeline` (Eigentümer root), legt Token und Review-Schlüssel unter `/etc/pipeline-gate/projects/<benutzer>` ab (nur für `pipeline-gate` lesbar), erlaubt dem Benutzer per sudoers nur das Gate und leitet `gh` (`~/.local/bin/gh`) und `git` (`ext::`-Transport in `~/.gitconfig`) des Benutzers durch das Gate.
-3. Einmal je Host Claude Code für `pipeline-gate` installieren und anmelden (`sudo -u pipeline-gate -H ...`, dann `claude` und `/login`); damit laufen die Reviews.
+3. Einmal je Host Claude Code für `pipeline-gate` in der Version aus `host/versions.sh` installieren, in dessen `~/.claude/settings.json` `"env": {"DISABLE_AUTOUPDATER": "1"}` setzen und anmelden (`sudo -u pipeline-gate -H ...`, dann `claude` und `/login`); damit laufen die Reviews.
 4. Im Repository unter Settings, Secrets and variables, Actions das Secret `PIPELINE_REVIEW_KEY` mit dem Inhalt von `/etc/pipeline-gate/projects/<benutzer>/review-key` anlegen. Ohne Secret zählt `agent-review` ein Review nach seinem Text, mit Warnung.
 5. Der Projekt-Benutzer darf keinen eigenen Token haben (kein `~/.config/gh/hosts.yml`, kein `GH_TOKEN`); `autopilot-start.sh` bricht sonst ab.
 
@@ -50,7 +50,7 @@ Der Token hat kein Administration-Recht, deshalb von Hand:
 ## 6. Telegram (als Projekt-Benutzer)
 
 1. Bei [@BotFather](https://t.me/BotFather) `/newbot` senden und den Token kopieren. Jedes Projekt braucht einen eigenen Bot.
-2. In `claude`: `/plugin install telegram@claude-plugins-official` (User-Scope), dann `/telegram:configure <token>`. Der Token landet in `~/.claude/channels/telegram/.env`, nicht im Repository.
+2. In `claude`: `/plugin install telegram@claude-plugins-official` (User-Scope; es installiert die Version, die der Marketplace gerade führt, `autopilot-start.sh` verlangt die aus `host/versions.sh`), dann `/telegram:configure <token>`. Der Token landet in `~/.claude/channels/telegram/.env`, nicht im Repository.
 3. Session beenden und `claude --channels plugin:telegram@claude-plugins-official` starten. Dem Bot schreiben, den Code mit `/telegram:access pair <code>` bestätigen, danach `/telegram:access policy allowlist`, damit nur der Maintainer den Bot erreicht.
 4. Session beenden.
 
