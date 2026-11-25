@@ -4,7 +4,7 @@ Status: angenommen
 
 ## Entscheidung
 
-Der Orchestrator startet beim Warten genau einen [`autopilot-poll.py`](../../bin/autopilot-poll.py) als Hintergrund-Bash, der alle Ziele zugleich prüft: offene Issues mit dem Auswahl-Label und je geparktem Issue dessen Antwort oder Patch. Das Skript fragt alle 60 s per `gh api` ab: Issue-Kommentare mit einem Aufruf ab dem kleinsten Cursor, gefiltert nach dem Cursor `events_since` jedes Issues; für einen Patch den Head des Issue-Branches gegen den Commit im Cursor. Beim ersten Treffer gibt es die Events als JSON-Zeilen aus und endet; das Ende startet einen neuen Turn der Session. `check` fragt einmal ohne Warten ab, für Antworten, die kamen, während ein anderes Issue lief. Es zählen nur Kommentare mit `author_association == OWNER` auf geparkten Issues. Behandlung siehe [Orchestrator](../../skills/autopilot/SKILL.md#github-events).
+Der Orchestrator startet beim Warten genau einen [`autopilot-poll.py`](../../bin/autopilot-poll.py) als Hintergrund-Bash, der alle Ziele zugleich prüft: offene Issues mit dem Auswahl-Label und je geparktem Issue dessen Antwort oder Patch. Das Skript fragt alle 60 s per `gh api` ab: Issue-Kommentare mit einem Aufruf ab dem kleinsten Cursor, gefiltert nach dem Cursor `events_since` jedes Issues; für einen Patch den Head des Issue-Branches gegen den Commit im Cursor. Beim ersten Treffer gibt es die Events als JSON-Zeilen aus und endet; das Ende startet einen neuen Turn der Session. `check` fragt einmal ohne Warten ab, für Antworten, die kamen, während ein anderes Issue lief. Es zählen nur Kommentare mit `author_association == OWNER` auf geparkten Issues. Behandlung siehe [Orchestrator](../../bin/autopilot-state.py).
 
 ## Begründung
 
