@@ -64,6 +64,8 @@ def test_workflow_rules_hold_what_skills_refer_to():
     text = (ROOT / WORKFLOW.removeprefix("${CLAUDE_PLUGIN_ROOT}/")).read_text()
     assert "## Autopilot steps" in text
     assert "STATUS: done | blocked | needs_input" in text
+    # Skills name the scripts without a path.
+    assert "The scripts of the pipeline are on `PATH`" in text
 
 
 def test_orchestrator_rules_stay_out_of_the_fork_rules():
