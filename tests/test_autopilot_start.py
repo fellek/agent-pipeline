@@ -66,6 +66,11 @@ esac""",
     write_executable(plugin_bin / "telegram-send.py", 'cat > "$TELEGRAM_OUT"')
     write_executable(plugin_bin / "gate", 'exit "${GATE_EXIT-0}"')
     copy_scripts(scripts, "gate.py")
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    (home / ".gitconfig").write_text(
+        "[user]\n\tname = autopilot\n\temail = autopilot@host\n"
+    )
     for cmd in ("gh", "sudo", "bun", "bwrap", "socat"):
         write_executable(stubs / cmd, "exit 0")
 
@@ -251,6 +256,16 @@ def test_fails_without_sandbox_tools(run_start, tmp_path, cmd):
     result, *_ = run_start(env={"PATH": f"{tmp_path / 'bin'}:{system}"})
     assert result.returncode == 1
     assert f"{cmd} is missing" in result.stderr
+
+
+def test_refuses_without_git_identity(run_start, tmp_path):
+    (tmp_path / "home" / ".gitconfig").write_text("[user]\n\tname = autopilot\n")
+
+    result, lines, *_ = run_start()
+
+    assert result.returncode == 1
+    assert "git has no user.email, run:" in result.stderr
+    assert not lines
 
 
 def test_refuses_without_working_gate(run_start):
