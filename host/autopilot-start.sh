@@ -41,6 +41,9 @@ claude_version=$(claude --version | cut -d' ' -f1)
 # Only the gate may hold a GitHub token, see install-gate.sh.
 ! grep -qs oauth_token "$HOME/.config/gh/hosts.yml" && [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] \
   || fail "$(id -un) holds a GitHub token of its own, only the gate may hold it"
+# Commits, and the bump pull request of update-host, take the identity from git config.
+git config user.name >/dev/null && git config user.email >/dev/null \
+  || fail "git has no user.name or user.email, run: git config --global user.name <name>; git config --global user.email <email>"
 "${host%/host}/bin/gate" check >/dev/null 2>&1 || fail "the gate does not reach the repository, see install-gate.sh"
 default=$("${host%/host}/bin/default-branch.py") || fail "the default branch is unknown"
 warning=$("$host/check-ruleset.py" "$default" 2>&1) || fail "$warning"

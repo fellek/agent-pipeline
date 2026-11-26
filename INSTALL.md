@@ -37,9 +37,16 @@ Als Projekt-Benutzer (`sudo -iu autopilot`):
 
    Die Installer tragen den `PATH` erst für neue Shells ein, die letzte Zeile gilt für die laufende. Ohne `bun` im `PATH` startet das Telegram-Plugin nicht.
 
-4. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken, etwa `ln -s /pfad/zu/programm ~/.local/bin/`.
+4. Die Git-Identität für die Commits des Autopiloten und den Bump-PR des Timers:
 
-`autopilot-start.sh` prüft `claude` und das Telegram-Plugin auf die Versionen aus `host/versions.sh`, `git`, `gh`, `sudo`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, das Gate, dass der Benutzer keinen eigenen Token hat, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
+   ```
+   git config --global user.name <name>
+   git config --global user.email <email>
+   ```
+
+5. Der Dienst sucht Programme nur in `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/usr/bin` und `/bin` ([Unit](host/autopilot.service)). Alles, was woanders liegt, dort verlinken, etwa `ln -s /pfad/zu/programm ~/.local/bin/`.
+
+`autopilot-start.sh` prüft `claude` und das Telegram-Plugin auf die Versionen aus `host/versions.sh`, `git` samt Identität, `gh`, `sudo`, `tmux`, `bun`, `python3`, `bwrap`, `socat`, das Gate, dass der Benutzer keinen eigenen Token hat, das Ruleset des Default-Branches, das Telegram-Plugin samt Token und Linger und nennt, was fehlt.
 
 ## 2. GitHub und Gate (mit sudo-Rechten)
 
