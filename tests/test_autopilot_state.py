@@ -964,6 +964,52 @@ def test_update_with_a_current_issue_is_refused(pilot):
     assert pilot.texts() == ["update nur ohne aktuelles Issue"]
 
 
+RELEASE = ".claude/skills/pipeline/host/release-pipeline.sh"
+
+
+def test_release_asks_for_the_level(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    pilot.result(RELEASE, out="Release nach v0.3.4: major v1.0.0, ...")
+    message(pilot, "release")
+    assert pilot.ran(RELEASE)
+    assert pilot.sent == [
+        (
+            "Release nach v0.3.4: major v1.0.0, ...",
+            ("release major", "release minor", "release patch"),
+        )
+    ]
+
+
+def test_release_of_a_level_offers_it_again_after_the_merge(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    pilot.result(RELEASE, "patch", out="https://pr/9\nsudo ... gate merge 9 x")
+    message(pilot, "release patch")
+    assert pilot.sent == [("https://pr/9\nsudo ... gate merge 9 x", ("release patch",))]
+
+
+def test_release_command_after_the_merge_has_no_button(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    pilot.result(
+        RELEASE, "minor", out="sudo -u pipeline-gate /opt/pipeline/gate release"
+    )
+    message(pilot, "release minor")
+    assert pilot.sent == [("sudo -u pipeline-gate /opt/pipeline/gate release", ())]
+
+
+def test_release_failure_is_reported(pilot):
+    pilot.state = {"waiting_for": "new_issue"}
+    pilot.result(RELEASE, "major", code=1, err="release-pipeline: no")
+    message(pilot, "release major")
+    assert pilot.texts() == ["release-pipeline: no"]
+
+
+def test_release_with_a_current_issue_is_refused(pilot):
+    at_step(pilot, "issue", waiting_for="resume", paused=True, task_id=None)
+    message(pilot, "release patch")
+    assert pilot.texts() == ["release nur ohne aktuelles Issue"]
+    assert not pilot.ran(RELEASE)
+
+
 # Task commands
 
 

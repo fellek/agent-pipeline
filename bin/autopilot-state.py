@@ -153,6 +153,7 @@ COMMAND = re.compile(
     r"^(?:#(?P<answer>\d+)\s+(?P<text>.+)"
     r"|(?P<simple>help|status|pause|weiter|cleanup|update|rollback|prune|prune ja|/verbose)"
     r"|(?P<park>park|stop)\s+#(?P<park_n>\d+)"
+    r"|release(?P<release>(?:\s+(?:major|minor|patch))?)"
     r"|label\s+(?P<label>\S+)"
     r"|/(?P<task>[\w-]+)(?:\s+(?P<task_n>\d+))?)$",
     re.DOTALL,
@@ -1241,6 +1242,8 @@ class Autopilot:
             self.weiter()
         if simple in ("update", "rollback"):
             self.update(simple)
+        if match["release"] is not None:
+            self.release(match["release"].strip())
         if simple == "cleanup":
             self.cleanup()
         if simple == "prune":
@@ -1422,6 +1425,22 @@ class Autopilot:
         if code != 0:
             self.reply(error or out)
         self.reply(out.splitlines()[-1] if out else "")
+
+    def release(self, level):
+        if self.s["issue"] is not None or self.s["waiting_for"] not in (
+            "new_issue",
+            "resume",
+        ):
+            self.reply("release nur ohne aktuelles Issue")
+        code, out, error = self.run(
+            ".claude/skills/pipeline/host/release-pipeline.sh", *level.split()
+        )
+        if code != 0:
+            self.reply(error or out)
+        if not level:
+            self.reply(out, "release major", "release minor", "release patch")
+        # After the merge the reply holds the root command that starts the release.
+        self.reply(out, *() if "gate release" in out else (f"release {level}",))
 
     def task(self, task, n):
         if (

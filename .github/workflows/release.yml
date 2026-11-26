@@ -15,6 +15,9 @@ on:
       notes:
         description: Upgrade notes, placed before the generated notes
         required: false
+      sha:
+        description: Commit of main to release, set by the gate; empty takes the head
+        required: false
 
 permissions:
   contents: read
@@ -25,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: '[ "$GITHUB_REF" = refs/heads/main ] || { echo "release only from main, not $GITHUB_REF" >&2; exit 1; }'
+      # The gate checked this commit; main may have moved since the dispatch.
+      - env:
+          SHA: ${{ inputs.sha }}
+        run: '[ -z "$SHA" ] || [ "$SHA" = "$GITHUB_SHA" ] || { echo "main is at $GITHUB_SHA, not $SHA" >&2; exit 1; }'
 
   checks:
     needs: main

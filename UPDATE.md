@@ -8,8 +8,8 @@ Wie in INSTALL.md heißt der Projekt-Benutzer `autopilot`, sein Dienst `autopilo
 
 | # | Schritt | Automatisch | Wer von Hand |
 |---|---|---|---|
-| 1 | Version erhöhen | nein | Maintainer, PR |
-| 2 | Release anlegen | Workflow `release` nach dem Start | Maintainer, Browser |
+| 1 | Version erhöhen | nein | Telegram `release`, PR |
+| 2 | Release anlegen | Workflow `release` nach dem Start | root `gate release`, Browser |
 | 3 | Bump-PR öffnen | Timer `pipeline-update@autopilot` | Telegram `update` |
 | 4 | Ankündigung | Timer, per Telegram | entfällt |
 | 5 | 12 Stunden warten, Veto möglich | Timer | Bump-PR schließen |
@@ -22,6 +22,10 @@ Der Timer läuft als root alle 15 Minuten (`/opt/pipeline/update-host --auto aut
 
 ## 1. Version erhöhen
 
+Dem Bot `release` senden (nur ohne laufendes Issue). Er antwortet mit der neuen Version je Stufe und den Buttons `release major`, `release minor` und `release patch`. Ein Druck öffnet den PR `Bump plugin to <version>` auf dem Branch `bump-plugin-<version>`, eine Stufe über dem neuesten Release, und antwortet mit dem Link und den root-Befehlen für Approve und Merge unten. Ist der PR schon offen, nennt er ihn erneut.
+
+In einer Claude-Code-Session in einem Klon dieses Repositorys tut der Skill `/release` dasselbe, mit einer Rückfrage statt Buttons. Er braucht `git` und `gh` mit Schreibrecht auf das Repository, in einer Cloud-Session ohne `gh` geht er also nicht. Die root-Befehle nennen den Benutzer, unter dem er läuft; außerhalb des Hosts dort `<benutzer>` einsetzen. Den Workflow startet auch er nie selbst.
+
 Ein PR, der `version` in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) erhöht, durch Gate-Review und Merge wie jeder PR dieses Repositorys. Das Gate wählt das Repository nach dem aufrufenden Benutzer, deshalb hier nicht `autopilot`, sondern `<benutzer>`: der Benutzer, dessen Gate dieses Repository hält (der Autopilot der Pipeline selbst). Von Hand auf dessen Host als root, nachdem die CI des PRs grün ist:
 
 ```
@@ -33,9 +37,17 @@ Statt des Reviews durch das Gate geht auch das Verdict des Maintainers: `sudo -u
 
 ## 2. Release anlegen
 
-Im Browser: Actions, Workflow `release`, "Run workflow" auf `main`. `tag` ist `v` plus die Version aus 1., `notes` die Update-Hinweise (was ein Projekt von Hand anpassen muss), leer lassen, wenn es keine gibt. Der Workflow lässt die CI laufen und legt das Release mit generierten Notes an.
+Nach dem Merge aus 1. dieselbe Stufe erneut senden, also etwa wieder `release patch` (oder `/release`). Statt eines neuen PRs kommt der root-Befehl, der den Workflow startet:
 
-Eine Claude-Session kann den Workflow nicht starten: ihr Token darf Actions nur lesen, die API antwortet mit 403. Der Start bleibt deshalb beim Maintainer, im Browser oder mit seinem eigenen `gh` (nicht auf dem Host, der Projekt-Benutzer hat keinen Token):
+```
+sudo -u pipeline-gate /opt/pipeline/gate release <benutzer> <tag> <sha> "$(cat <hinweise>.md)"
+```
+
+Das letzte Argument sind die Update-Hinweise (`notes`), ohne Hinweise weglassen. Das Gate startet den Workflow nur für root, nur wenn `<sha>` der Head von `main` ist, `<tag>` `v` plus die Version in dessen `plugin.json` und es dieses Release noch nicht gibt; der Workflow bricht ab, wenn `main` sich bis zu seinem Start bewegt hat. Die Session selbst kann kein Release starten, denn der Timer installiert jedes auf allen Hosts. Dafür braucht der Token des Gates für dieses Repository Actions mit Lesen und Schreiben ([INSTALL.md](INSTALL.md), Schritt 2.1); ohne antwortet GitHub mit 403 "Resource not accessible by personal access token".
+
+Ohne Gate im Browser: Actions, Workflow `release`, "Run workflow" auf `main`. `tag` ist `v` plus die Version aus 1., `notes` die Update-Hinweise (was ein Projekt von Hand anpassen muss), leer lassen, wenn es keine gibt. Der Workflow lässt die CI laufen und legt das Release mit generierten Notes an.
+
+Oder mit dem eigenen `gh` des Maintainers (nicht auf dem Host, der Projekt-Benutzer hat keinen Token):
 
 ```
 gh workflow run release.yml --repo fellek/agent-pipeline --ref main -f tag=<tag> -f notes='<hinweise>'
