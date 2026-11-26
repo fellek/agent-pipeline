@@ -102,10 +102,7 @@ exec "$@\"""",
                 "HOME": str(home),
                 "GATE_ROOT": str(root),
                 "GIT_CONFIG_GLOBAL": str(tmp_path / "gitconfig"),
-                "GIT_AUTHOR_NAME": "t",
-                "GIT_AUTHOR_EMAIL": "t@t",
-                "GIT_COMMITTER_NAME": "t",
-                "GIT_COMMITTER_EMAIL": "t@t",
+                "GIT_CONFIG_NOSYSTEM": "1",
             },
             capture_output=True,
             text=True,
@@ -302,6 +299,11 @@ def app_remote(tmp_path, host):
     git(work, "push", "-q", "--tags", str(remote), "HEAD")
     with (tmp_path / "gitconfig").open("a") as config:
         config.write(f'[url "{remote}"]\n\tinsteadOf = https://github.com/o/app\n')
+    # Only the working tree of the autopilot holds its git identity.
+    project = tmp_path / "project"
+    git(project, "init", "-q")
+    git(project, "config", "user.name", "autopilot")
+    git(project, "config", "user.email", "autopilot@host")
     (host[0].home / ".local/bin").mkdir(parents=True, exist_ok=True)
     write_executable(
         host[0].home / ".local/bin/gh",
@@ -322,8 +324,24 @@ def test_auto_opens_the_bump_to_the_newest_release(host, app_remote):
 
     assert result.returncode == 0, result.stderr
     assert git(app_remote, "show", f"bump-pipeline-v2:{PIN}").strip() == "v2"
+    author = git(app_remote, "log", "-1", "--format=%an %ae", "bump-pipeline-v2")
+    assert author == "autopilot autopilot@host"
     assert any(line.startswith("pr create") for line in log(state, "gh"))
     assert not approved(state)
+
+
+def test_auto_needs_the_git_identity_of_the_autopilot(host, app_remote, tmp_path):
+    run, state, _root = host
+    (state / "prs").write_text("")
+    git(tmp_path / "project", "config", "--unset", "user.email")
+
+    result = run("--auto")
+
+    assert result.returncode == 1
+    assert "no git user.email in" in result.stderr
+    assert "opening the bump pull request to v2 failed" in result.stderr
+    assert not git(app_remote, "branch", "--list", "bump-pipeline-v2")
+    assert not any(line.startswith("pr create") for line in log(state, "gh"))
 
 
 @pytest.mark.parametrize(
