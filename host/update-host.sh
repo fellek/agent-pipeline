@@ -64,6 +64,7 @@ pinned_at() {
 }
 # Opens the bump pull request as the autopilot would on `update`, in a clone of its
 # own that it deletes, so the working tree of the running autopilot stays untouched.
+# The commit takes the identity the autopilot commits with in its working tree.
 open_bump() {
   sudo -u "$user" -H bash -c '
     set -euo pipefail
@@ -73,8 +74,12 @@ open_bump() {
     trap "rm -rf \"$tmp\"" EXIT
     git clone --quiet --recurse-submodules "https://github.com/$1" "$tmp/project"
     cd "$tmp/project"
+    for key in user.name user.email; do
+      value=$(git -C "$4" config "$key") || { echo "update-host: no git $key in $4" >&2; exit 1; }
+      git config "$key" "$value"
+    done
     if [ -f "$2" ]; then host/update-pipeline.sh; else "$3/host/update-pipeline.sh"; fi
-  ' _ "$repo" "$pin" "$sub"
+  ' _ "$repo" "$pin" "$sub" "$project"
 }
 
 if [ "${1-}" = --auto ]; then
