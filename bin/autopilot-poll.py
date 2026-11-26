@@ -5,6 +5,8 @@
 issue to start: open issues with an open blocker are skipped, issues blocking an
 open issue come first, then the lowest number. `untriaged` prints the open
 issues without a status label and without the selection label, for `setprio`.
+`new_issue` also wakes the orchestrator when the default branch pins another
+pipeline release, so an idle autopilot restarts on a merged bump.
 
 Only issues of the repository's owner, members and collaborators enter the
 pipeline, so a stranger's issue cannot steer a fork. A stranger's issue becomes a
@@ -29,6 +31,7 @@ import subprocess
 import sys
 import time
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from urllib.parse import quote
 
 import trust
@@ -39,6 +42,7 @@ SKIPPED_LABELS = {"question", "parked"}
 STATUS_LABELS = trust.STATUS_LABELS
 TRUSTED = trust.TRUSTED
 TARGET_ARITY = {"answer": 2, "new_issue": 1, "patch": 2}
+RELEASE_CHANGED = Path(__file__).with_name("release-changed.sh")
 
 
 def gh_api(*args):
@@ -195,6 +199,12 @@ def answers(number, since):
     return maintainer_events(comments, number, since)
 
 
+def release_changed():
+    return subprocess.run(
+        [str(RELEASE_CHANGED)], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
 def poll(targets):
     """The events of the targets. One startable issue is enough to wake the
     orchestrator, so the search stops at the first."""
@@ -204,6 +214,8 @@ def poll(targets):
             events += answers(*args)
         elif mode == "new_issue":
             (label,) = args
+            if release := release_changed():
+                events.append({"type": "release", "name": release})
             issues = open_issues()
             if first := next(candidates(label, issues), None):
                 events.append({"type": "labeled_issue", **summary(first)})

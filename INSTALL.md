@@ -76,12 +76,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
 
 Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2 an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates: der Autopilot pausiert mit dem Fehler, im Leerlauf nach drei gescheiterten Abfragen des Pollers.
 
-Nach einem Release, das `host/gate.py`, `host/gate-review.md`, `bin/attestation.py` oder `rules/workflow.md` ändert, `install-gate.sh` erneut ausführen (leere Eingabe behält den Token); `autopilot-start.sh` warnt, solange das installierte Gate abweicht:
-
-```
-cd ~/agent-pipeline && git fetch --tags && git checkout <tag>
-read -rs t && printf '%s\n' "$t" | sudo host/install-gate.sh autopilot <owner>/<projekt>
-```
+Bei jedem Update installiert `update-host.sh` das Gate des neuen Releases ([Update der Pipeline](#update-der-pipeline)); `autopilot-start.sh` warnt, solange das installierte Gate von dem des Releases abweicht.
 
 ## 3. Projekt (als Projekt-Benutzer)
 
@@ -202,6 +197,20 @@ XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user status autopilot-<Repository
 ```
 
 Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt und Auswahl-Label.
+
+## Update der Pipeline
+
+1. Dem Bot `update` senden; der Autopilot öffnet den PR auf das neueste Release.
+2. Mit sudo-Rechten im eigenen Klon aus 2.2, nie in einem Verzeichnis des Projekt-Benutzers, dessen Code sonst als root liefe. `<tag>` ist das Release aus dem PR; der Klon braucht mindestens das erste Release mit `update-host.sh`:
+
+   ```
+   cd ~/agent-pipeline && git fetch --tags && git checkout <tag>
+   sudo host/update-host.sh autopilot
+   ```
+
+   Es zeigt den PR mit den Release Notes und prüft, dass er nur den Pin auf das Release setzt. Nach `y` gibt es das Approve, mergt über das Gate, sobald die Läufe bestanden sind, und installiert das Gate des Releases; der Token bleibt.
+
+Der Autopilot startet danach von selbst auf dem Release neu, im Leerlauf binnen einer Minute, sonst vor dem nächsten Issue. Verlangt das Release eine andere Version von `claude` oder des Telegram-Plugins, meldet `autopilot-start.sh` das per Telegram; dann als Projekt-Benutzer und als `pipeline-gate` wie in 1.3 und 2.3 installieren.
 
 ## Weiteres Projekt auf demselben Host
 
