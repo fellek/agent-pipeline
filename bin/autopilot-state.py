@@ -1203,6 +1203,8 @@ class Autopilot:
 
     def on_telegram(self, chat_id, text):
         self.s["chat_id"] = chat_id
+        # `#<n> stop` reads like an answer, but "stop" as an answer resumes the issue.
+        text = re.sub(r"^#(\d+)\s+(park|stop)$", r"\2 #\1", text)
         match = COMMAND.match(text)
         waiting = self.s["waiting_for"]
         running = waiting in RUNNING
