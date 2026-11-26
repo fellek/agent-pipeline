@@ -49,8 +49,9 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
 2. Dieses Repository auf dem Release-Tag klonen und das Gate installieren; `read` wartet auf den Token (unsichtbare Eingabe):
 
    ```
-   git clone --branch <tag> https://github.com/fellek/agent-pipeline /tmp/agent-pipeline
-   cd /tmp/agent-pipeline
+   d=$(mktemp -d)
+   git clone --branch <tag> https://github.com/fellek/agent-pipeline "$d/pipeline"
+   cd "$d/pipeline"
    read -rs t && printf '%s\n' "$t" | sudo host/install-gate.sh autopilot <owner>/<projekt>
    ```
 
@@ -64,7 +65,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
    sudo -u pipeline-gate -H bash -c 'cd && ~/.local/bin/claude'
    ```
 
-   In `claude` dann `/login` ausführen und die Session beenden. Den Klon braucht danach niemand mehr: `rm -rf /tmp/agent-pipeline`.
+   In `claude` dann `/login` ausführen und die Session beenden. Den Klon braucht danach niemand mehr: `cd && rm -rf "$d"`. Ein eigenes Verzeichnis per `mktemp -d`, weil `install-gate.sh` als root Dateien daraus installiert, die der Projekt-Benutzer in einem festen Pfad unter `/tmp` vorher tauschen könnte.
 4. Im Repository unter Settings, Secrets and variables, Actions das Secret `PIPELINE_REVIEW_KEY` mit der Ausgabe von
 
    ```

@@ -62,10 +62,14 @@ Automatisch nach den 12 Stunden. Von Hand alles in einem Befehl, als root; er ze
 /opt/pipeline/update-host autopilot
 ```
 
-Gibt es `/opt/pipeline/update-host` noch nicht (erstes Update auf ein Release mit Timer), einmalig aus einem Wegwerf-Klon des Releases, als root:
+Gibt es `/opt/pipeline/update-host` noch nicht (erstes Update auf ein Release mit Timer), einmalig vorher als root das Gate aus einem Wegwerf-Klon des Releases installieren; das legt `update-host` und den Timer an. `mktemp -d`, nicht ein fester Pfad in `/tmp`: den könnte der Projekt-Benutzer vorher anlegen und die Dateien tauschen, die root dann installiert.
 
 ```
-git clone -q --branch <tag> https://github.com/fellek/agent-pipeline /tmp/pipeline && /tmp/pipeline/host/update-host.sh autopilot; rm -rf /tmp/pipeline
+d=$(mktemp -d)
+git clone -q --branch <tag> https://github.com/fellek/agent-pipeline "$d/pipeline"
+"$d/pipeline/host/install-gate.sh" autopilot <owner>/<projekt> </dev/null
+rm -rf "$d"
+/opt/pipeline/update-host autopilot
 ```
 
 Die Teilschritte einzeln, wenn `update-host` selbst scheitert, als root:
@@ -75,17 +79,18 @@ Die Teilschritte einzeln, wenn `update-host` selbst scheitert, als root:
 3. Gate aus dem Release installieren, leere Eingabe behält den Token:
 
    ```
-   git clone -q --branch <tag> https://github.com/fellek/agent-pipeline /tmp/pipeline
-   /tmp/pipeline/host/install-gate.sh autopilot <owner>/<projekt> </dev/null
+   d=$(mktemp -d)
+   git clone -q --branch <tag> https://github.com/fellek/agent-pipeline "$d/pipeline"
+   "$d/pipeline/host/install-gate.sh" autopilot <owner>/<projekt> </dev/null
    ```
 
-4. Claude Code in der Version aus `/tmp/pipeline/host/versions.sh`, dann den Klon löschen:
+4. Claude Code in der Version aus `host/versions.sh` des Releases, dann den Klon löschen:
 
    ```
-   v=$(. /tmp/pipeline/host/versions.sh && echo "$claude_code")
+   v=$(. "$d/pipeline/host/versions.sh" && echo "$claude_code")
    sudo -u pipeline-gate -H bash -c 'cd && ~/.local/bin/claude install "$1"' _ "$v"
    sudo -u autopilot -H bash -c 'cd && ~/.local/bin/claude install "$1"' _ "$v"
-   rm -rf /tmp/pipeline
+   rm -rf "$d"
    ```
 
 Das Telegram-Plugin zieht kein Weg nach. Verlangt das Release eine andere Version, meldet `autopilot-start.sh` das per Telegram; dann als `autopilot` in `claude` `/plugin install telegram@claude-plugins-official`.
@@ -98,7 +103,7 @@ Von Hand: dem Bot `update` senden. Läuft der Dienst nicht, als `autopilot` im P
 
 ```
 git pull
-.claude/skills/pipeline/host/use-release.sh
+host/use-release.sh
 XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart autopilot-<Repository>
 ```
 
@@ -108,6 +113,6 @@ XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart autopilot-<Repositor
 
 - Zustand: `systemctl list-timers 'pipeline-update@*'`, letzter Lauf: `journalctl -u pipeline-update@autopilot`.
 - Sofort laufen lassen: `systemctl start pipeline-update@autopilot.service`.
-- Ausschalten: `systemctl disable --now pipeline-update@autopilot.timer`; Updates dann nur von Hand. `install-gate.sh` schaltet ihn bei der nächsten Installation wieder ein.
+- Ausschalten: `systemctl disable --now pipeline-update@autopilot.timer`; Updates dann nur von Hand. Jedes Update von Hand (6.) schaltet ihn über `install-gate.sh` wieder ein; dann danach erneut ausschalten.
 
 Ohne Wartezeit hätte, wer das GitHub-Konto der Pipeline übernimmt, sofort root auf dem Host; mit ihr hat der Maintainer 12 Stunden für ein Veto. 2FA auf GitHub ist Pflicht.
