@@ -28,6 +28,7 @@ Commands:
 """
 
 import base64
+import fcntl
 import json
 import os
 import pwd
@@ -212,38 +213,45 @@ def project_of_caller():
 
 def refresh_mirror(project):
     """Bring the mirror in line with GitHub, including its default branch."""
-    if not project.mirror.exists():
-        project.run("git", "init", "--quiet", "--bare", str(project.mirror), check=True)
-        hook = project.mirror / "hooks" / "pre-receive"
-        # sudo runs the gate by its absolute path, so argv[0] names the installed gate.
-        hook.write_text(
-            f'#!/bin/sh\nexec "{Path(sys.argv[0]).resolve()}" pre-receive\n'
+    project.work.mkdir(parents=True, exist_ok=True)
+    # Two git calls of the user, as the clone of update-host and the poller, would
+    # fetch at once, and git fails the fetch that finds a ref locked by the other.
+    with open(project.work / "mirror.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not project.mirror.exists():
+            project.run(
+                "git", "init", "--quiet", "--bare", str(project.mirror), check=True
+            )
+            hook = project.mirror / "hooks" / "pre-receive"
+            # sudo runs the gate by its absolute path, so argv[0] names the installed gate.
+            hook.write_text(
+                f'#!/bin/sh\nexec "{Path(sys.argv[0]).resolve()}" pre-receive\n'
+            )
+            hook.chmod(0o755)
+        git = ["git", "-C", str(project.mirror)]
+        project.run(
+            *git,
+            "fetch",
+            "--quiet",
+            "--prune",
+            project.url,
+            "+refs/heads/*:refs/heads/*",
+            "+refs/tags/*:refs/tags/*",
+            check=True,
+            stdout=sys.stderr,
         )
-        hook.chmod(0o755)
-    git = ["git", "-C", str(project.mirror)]
-    project.run(
-        *git,
-        "fetch",
-        "--quiet",
-        "--prune",
-        project.url,
-        "+refs/heads/*:refs/heads/*",
-        "+refs/tags/*:refs/tags/*",
-        check=True,
-        stdout=sys.stderr,
-    )
-    head = project.run(
-        *git,
-        "ls-remote",
-        "--symref",
-        project.url,
-        "HEAD",
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    if match := re.match(r"ref: (refs/heads/\S+)\tHEAD", head):
-        project.run(*git, "symbolic-ref", "HEAD", match.group(1), check=True)
+        head = project.run(
+            *git,
+            "ls-remote",
+            "--symref",
+            project.url,
+            "HEAD",
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        if match := re.match(r"ref: (refs/heads/\S+)\tHEAD", head):
+            project.run(*git, "symbolic-ref", "HEAD", match.group(1), check=True)
 
 
 def serve(project, service):

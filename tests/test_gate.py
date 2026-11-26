@@ -1,4 +1,5 @@
 import base64
+import fcntl
 import json
 import os
 import pwd
@@ -987,3 +988,21 @@ def test_carry_refuses_an_edit_moved_into_a_renamed_file(gate, project, carrying
     carrying["reviews"][:] = [attested(sha=approved)]
     with pytest.raises(gate.Refused, match="changed files of the pull request: g"):
         gate.carry(project, 5, git(repo, "rev-parse", "HEAD"))
+
+
+def test_refresh_mirror_holds_a_lock_while_it_runs_git(gate, project, monkeypatch):
+    held = []
+
+    def run(*args, **kwargs):
+        with open(project.work / "mirror.lock") as other:
+            try:
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held.append(False)
+            except BlockingIOError:
+                held.append(True)
+        return subprocess.CompletedProcess(args, 0, stdout="")
+
+    project.mirror.mkdir(parents=True)
+    monkeypatch.setattr(project, "run", run)
+    gate.refresh_mirror(project)
+    assert held == [True, True]
