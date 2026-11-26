@@ -458,7 +458,8 @@ def run_gh(project, args):
     args, stdin = mark_comment(args, sys.stdin.read)
     # gh runs git in its working directory, which the caller may keep closed to the
     # gate, as the clone of update-host; GH_REPO names the repository anyway.
-    if not os.access(".", os.R_OK | os.X_OK):
+    # The absolute path, since a closed parent blocks git while "." itself stays open.
+    if not os.access(os.getcwd(), os.R_OK | os.X_OK):
         project.work.mkdir(parents=True, exist_ok=True)
         os.chdir(project.work)
     env = {**os.environ, **project.env()}
