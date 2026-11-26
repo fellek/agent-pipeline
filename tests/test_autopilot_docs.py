@@ -14,6 +14,8 @@ COMMANDS = [
     "/verbose",
     "label <name>",
     "update",
+    "release",
+    "release <stufe>",
     "#<n> <text>",
     "/<task> <n>",
     "plan-issue",

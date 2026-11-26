@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import pwd
@@ -292,7 +293,7 @@ def test_push_to_the_default_branch_is_refused(transport):
 def test_push_of_another_branch_is_refused(transport):
     _github, clone = transport
     result = push(clone, "HEAD:refs/heads/release")
-    assert "is no issue-* or bump-pipeline-* branch" in result.stderr
+    assert "is no issue-*, bump-pipeline-* or bump-plugin-* branch" in result.stderr
 
 
 def test_force_push_is_refused(transport):
@@ -563,6 +564,80 @@ def test_manual_review_of_root(gate, project, me, monkeypatch):
     )
     gate.manual_review(me, 5, SHA, "approve")
     assert attestation.verdict(posted[0], KEY, 5, SHA) == attestation.APPROVE
+
+
+# release
+
+
+@pytest.fixture
+def releasing(gate, project, monkeypatch):
+    state = {"head": SHA, "version": "0.3.5", "tags": ["v0.3.4"], "started": []}
+
+    def gh_json(self, *args):
+        path = args[-1]
+        if path == "repos/o/app":
+            return {"default_branch": "main"}
+        if path == "repos/o/app/commits/main":
+            return {"sha": state["head"]}
+        if path == f"repos/o/app/contents/.claude-plugin/plugin.json?ref={SHA}":
+            plugin = json.dumps({"version": state["version"]}).encode()
+            return {"content": base64.b64encode(plugin).decode()}
+        if path == "repos/o/app/releases?per_page=100":
+            return [[{"tag_name": tag} for tag in state["tags"]]]
+        raise AssertionError(args)
+
+    def gh(self, *args, input=None):
+        state["started"].append(args)
+        return ""
+
+    monkeypatch.setattr(gate.Project, "gh_json", gh_json)
+    monkeypatch.setattr(gate.Project, "gh", gh)
+    monkeypatch.setenv("SUDO_UID", "0")
+    return state
+
+
+def test_release_of_root_starts_the_workflow(gate, releasing, me):
+    gate.release(me, "v0.3.5", SHA, "Hinweis")
+    assert releasing["started"] == [
+        ("workflow", "run", "release.yml", "--ref", "main")
+        + ("-f", "tag=v0.3.5", "-f", f"sha={SHA}", "-f", "notes=Hinweis")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        ({"head": "c" * 40}, "main is at c"),
+        ({"version": "0.3.6"}, "v0.3.5 is not v0.3.6"),
+        ({"tags": ["v0.3.5"]}, "released already"),
+    ],
+)
+def test_release_refuses(gate, releasing, me, change, problem):
+    releasing.update(change)
+    with pytest.raises(gate.Refused, match=problem):
+        gate.release(me, "v0.3.5", SHA)
+    assert releasing["started"] == []
+
+
+def test_release_only_for_root(gate, releasing, me, monkeypatch):
+    monkeypatch.setenv("SUDO_UID", str(os.getuid() or 1000))
+    with pytest.raises(gate.Refused, match="only root"):
+        gate.release(me, "v0.3.5", SHA)
+    assert releasing["started"] == []
+
+
+def test_session_cannot_start_a_workflow_through_gh(gate):
+    args = ["workflow", "run", "release.yml", "--ref", "main", "-f", "tag=v1"]
+    assert "not allowed" in gate.gh_problem(args, "o/app")
+
+
+def test_bump_plugin_branches_are_pushable(gate):
+    assert (
+        gate.push_problem(
+            "refs/heads/bump-plugin-0.3.5", gate.ZERO, SHA, "refs/heads/main", None
+        )
+        is None
+    )
 
 
 def test_post_review_folds_comments_into_body_on_failure(gate, project, monkeypatch):

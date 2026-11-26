@@ -45,7 +45,7 @@ Als Projekt-Benutzer (`sudo -iu autopilot`):
 
 Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benutzer `pipeline-gate`, den alle Projekte des Hosts teilen. Der Projekt-Benutzer hat keinen Token; `gh` und `git` erreichen GitHub über `sudo -u pipeline-gate /opt/pipeline/gate`. So kann die Session weder auf den Default-Branch pushen noch mergen oder ein Review fälschen, auch wenn GitHub kein Ruleset durchsetzt ([Merge und Review](docs/autopilot.md#merge-und-review)).
 
-1. Einen fine-grained Token nur für das Projekt-Repository mit Ablaufdatum (etwa 90 Tage) anlegen, mit den Rechten Contents, Issues und Pull requests (Lesen und Schreiben) sowie Actions und Metadata (Lesen). `gh pr checks` braucht `checks=read`, das fine-grained Tokens nicht anbieten; der Autopilot nutzt deshalb `gh run`.
+1. Einen fine-grained Token nur für das Projekt-Repository mit Ablaufdatum (etwa 90 Tage) anlegen, mit den Rechten Contents, Issues und Pull requests (Lesen und Schreiben) sowie Actions und Metadata (Lesen); für das Repository der Pipeline selbst Actions mit Lesen und Schreiben, damit root mit `gate release` den Workflow `release` starten kann ([UPDATE.md](UPDATE.md#2-release-anlegen)). Ein bestehender Token lässt sich auf GitHub um das Recht erweitern, ohne ihn neu an `install-gate.sh` zu geben. `gh pr checks` braucht `checks=read`, das fine-grained Tokens nicht anbieten; der Autopilot nutzt deshalb `gh run`.
 2. Dieses Repository auf dem Release-Tag in ein eigenes Verzeichnis klonen und das Gate installieren; `read` wartet auf den Token (unsichtbare Eingabe). `mktemp -d` statt eines festen Pfads unter `/tmp`: den könnte der Projekt-Benutzer vorher anlegen und die Dateien tauschen, die `install-gate.sh` als root installiert.
 
    ```

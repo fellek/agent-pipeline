@@ -34,3 +34,9 @@ def test_upgrade_notes_come_before_the_tested_versions():
     assert "UPGRADE: ${{ inputs.notes }}" in release
     line = '[ -z "$UPGRADE" ] || notes="$UPGRADE"$' + "'\\n\\n'" + '"$notes"'
     assert line in release
+
+
+def test_release_takes_only_the_commit_the_gate_checked():
+    release = (WORKFLOWS / "release.yml").read_text()
+    assert "SHA: ${{ inputs.sha }}" in release
+    assert '[ -z "$SHA" ] || [ "$SHA" = "$GITHUB_SHA" ]' in release
