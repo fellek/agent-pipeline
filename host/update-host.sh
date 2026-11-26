@@ -58,12 +58,26 @@ read -rp "Approve and merge #$number, then install the gate of $tag? [y/N] " ans
 [ "$answer" = y ] || fail "nothing done"
 
 sudo -u pipeline-gate "$gate" review --manual "$user" "$number" "$sha" approve </dev/null
-# CI may still run, and an enforced ruleset waits for agent-review to see the approve.
+# Only a refusal that waits on runs clears by itself: CI that is still running, or a
+# ruleset whose required check agent-review has not yet seen the approve.
+pending() {
+  local problem
+  while IFS= read -r problem; do
+    case $problem in
+      "runs not passed: "*)
+        [ "$(gate_as_user gh run list --commit "$sha" --json status \
+          --jq 'map(select(.status != "completed")) | length')" != 0 ] || return 1 ;;
+      "gh pr merge failed: "*"status check"*) ;;
+      *) return 1 ;;
+    esac
+  done < <(sed 's/^gate: //; s/; /\n/g' <<<"$1")
+}
 last=
-deadline=$((SECONDS + 1800))
+tries=0
 until out=$(gate_as_user merge "$number" "$sha" 2>&1); do
-  grep -qE "runs not passed|gh pr merge failed" <<<"$out" && [ $SECONDS -lt $deadline ] \
-    || fail "merging #$number failed: $out"
+  pending "$out" || fail "merging #$number failed: $out"
+  tries=$((tries + 1))
+  [ $tries -lt 60 ] || fail "#$number still not mergeable after 30 minutes: $out; run update-host.sh $user again"
   [ "$out" = "$last" ] || echo "waiting: $out"
   last=$out
   sleep 30

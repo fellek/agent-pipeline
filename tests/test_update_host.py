@@ -28,6 +28,7 @@ def host(tmp_path, pipeline_releases):
     (state / "files").write_text(PIN + "\n")
     (state / "have").write_text("v2\n")
     (state / "merge-failures").write_text("")
+    (state / "pending").write_text("1\n")
     gate = root / "opt/pipeline/gate"
     gate.parent.mkdir(parents=True)
     write_executable(
@@ -37,7 +38,12 @@ case "$1 $2 $3" in
   "gh pr list") cat {state}/prs ;;
   "gh pr view") case "$*" in *files*) cat {state}/files ;; *) echo "- Notes of v2" ;; esac ;;
   "gh api "*) cat {state}/have ;;
+  "gh run list") cat {state}/pending ;;
   "merge "*)
+    if [ -s {state}/merge-always ]; then
+      cat {state}/merge-always >&2
+      exit 1
+    fi
     if [ -s {state}/merge-failures ]; then
       head -1 {state}/merge-failures >&2
       sed -i 1d {state}/merge-failures
@@ -120,10 +126,7 @@ def test_submodule_must_point_at_the_tag_and_merge_waits_for_runs(
 
     assert result.returncode == 0, result.stderr
     assert "waiting: gate: runs not passed: CI" in result.stdout
-    assert [line for line in log(state, "gate") if line.startswith("merge")] == [
-        "merge 7 abc",
-        "merge 7 abc",
-    ]
+    assert merges(state) == ["merge 7 abc", "merge 7 abc"]
 
 
 @pytest.mark.parametrize(
@@ -178,14 +181,54 @@ def test_does_nothing_without_yes(host):
     assert "#!/usr/bin/env bash" in (root / "opt/pipeline/gate").read_text()
 
 
-def test_refused_merge_stops_before_the_gate_is_installed(host):
+def merges(state):
+    return [line for line in log(state, "gate") if line.startswith("merge")]
+
+
+def test_merge_waits_for_a_required_status_check(host):
+    run, state, _root = host
+    (state / "merge-failures").write_text(
+        "gate: gh pr merge failed: Required status check agent-review is expected\n"
+    )
+
+    result = run()
+
+    assert result.returncode == 0, result.stderr
+    assert len(merges(state)) == 2
+
+
+@pytest.mark.parametrize(
+    ("refusal", "pending"),
+    [
+        ("gate: no attested approve on abc", "1"),
+        ("gate: 1 review threads are open; runs not passed: CI", "1"),
+        ("gate: runs not passed: CI", "0"),
+        ("gate: gh pr merge failed: Pull request is not mergeable", "1"),
+    ],
+    ids=["no_approve", "threads_and_runs", "failed_runs", "conflict"],
+)
+def test_lasting_refusal_stops_before_the_gate_is_installed(host, refusal, pending):
     run, state, root = host
-    (state / "merge-failures").write_text("gate: no attested approve on abc\n")
+    (state / "merge-always").write_text(refusal + "\n")
+    (state / "pending").write_text(pending + "\n")
 
     result = run()
 
     assert result.returncode == 1
-    assert "merging #7 failed: gate: no attested approve on abc" in result.stderr
+    assert f"merging #7 failed: {refusal}" in result.stderr
+    assert len(merges(state)) == 1
+    assert "#!/usr/bin/env bash" in (root / "opt/pipeline/gate").read_text()
+
+
+def test_merge_gives_up_after_30_minutes(host):
+    run, state, root = host
+    (state / "merge-always").write_text("gate: runs not passed: CI\n")
+
+    result = run()
+
+    assert result.returncode == 1
+    assert "#7 still not mergeable after 30 minutes" in result.stderr
+    assert len(merges(state)) == 60
     assert "#!/usr/bin/env bash" in (root / "opt/pipeline/gate").read_text()
 
 
