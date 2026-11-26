@@ -135,6 +135,7 @@ def test_started_stores_the_task_id(pilot):
     pilot.event("start", "")
     assert pilot.event("started", "t1") == []
     assert pilot.state["task_id"] == "t1"
+    assert pilot.state["task_since"].endswith("Z")
 
 
 def test_start_sets_the_label(pilot):

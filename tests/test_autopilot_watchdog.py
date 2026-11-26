@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from datetime import UTC, datetime
 
 import pytest
 from conftest import load_script
@@ -26,11 +27,11 @@ def watchdog(tmp_path, monkeypatch):
     return module
 
 
-def write_state(waiting_for, age_hours):
+def write_state(waiting_for, age_hours, **fields):
     path = os.path.join(".pipeline", "state.json")
     os.makedirs(".pipeline", exist_ok=True)
     with open(path, "w") as state:
-        json.dump({"waiting_for": waiting_for}, state)
+        json.dump({"waiting_for": waiting_for, **fields}, state)
     mtime = NOW - age_hours * 3600
     os.utime(path, (mtime, mtime))
 
@@ -41,9 +42,39 @@ def test_stale_running_step_is_reported_once(watchdog):
     watchdog.check(NOW)
     watchdog.check(NOW + 900)
 
+    assert watchdog.sent == ["autopilot-app: Seit 4 h kein Ergebnis (wartet auf step)"]
+
+
+def test_long_running_fork_is_reported_although_the_state_changed(watchdog):
+    started = datetime.fromtimestamp(NOW - 4 * 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_state("step", 0, issue=82, task_id="t1", task_since=started)
+
+    watchdog.check(NOW)
+
+    text = "Seit 4 h kein Ergebnis (wartet auf step), stop #82 bricht den Schritt ab"
+    assert watchdog.sent == [f"autopilot-app: {text}"]
+
+
+def test_task_since_of_an_ended_task_is_ignored(watchdog):
+    started = datetime.fromtimestamp(NOW - 4 * 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_state("step", 0, issue=82, task_id=None, task_since=started)
+    watchdog.check(NOW)
+    assert watchdog.sent == []
+
+
+def test_no_stop_hint_after_the_merge(watchdog):
+    write_state("merge_ci", 4, issue=82)
+    watchdog.check(NOW)
     assert watchdog.sent == [
-        "autopilot-app: Zustand seit 4 h unverändert (wartet auf step), bitte prüfen"
+        "autopilot-app: Seit 4 h kein Ergebnis (wartet auf merge_ci)"
     ]
+
+
+def test_recently_started_fork_is_no_finding(watchdog):
+    started = datetime.fromtimestamp(NOW - 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_state("step", 10, issue=82, task_id="t1", task_since=started)
+    watchdog.check(NOW)
+    assert watchdog.sent == []
 
 
 @pytest.mark.parametrize("waiting_for", ["new_issue", "resume", "restart"])

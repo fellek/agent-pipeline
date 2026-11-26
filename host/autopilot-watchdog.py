@@ -3,9 +3,9 @@
 
 `failed` runs on OnFailure= of the service: systemd restarts it with a growing
 delay, so each message is one failed start. `check` runs from a timer: it reports
-a state unchanged for 3 hours while a step runs, and a prompt in the tmux
-session (a permission prompt the Telegram plugin did not get through). It sends
-each finding once, until it changes.
+a fork or task that has run for 3 hours (without one, a state unchanged that
+long), and a prompt in the tmux session (a permission prompt the Telegram plugin
+did not get through). It sends each finding once, until it changes.
 
 Usage:
   autopilot-watchdog.py failed|check
@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 HOST = Path(__file__).resolve().parent
@@ -43,13 +44,21 @@ def stale(now):
     path = PIPELINE / "state.json"
     if not path.exists():
         return None
-    age = now - path.stat().st_mtime
-    waiting = json.loads(path.read_text()).get("waiting_for")
+    state = json.loads(path.read_text())
+    waiting = state.get("waiting_for")
+    # task_since outlives its task until the issue ends.
+    since = state.get("task_since") if state.get("task_id") else None
+    start = datetime.fromisoformat(since).timestamp() if since else path.stat().st_mtime
+    age = now - start
     if age < STALE_SECONDS or waiting in IDLE:
         return None
     hours = f"{age / 3600:.0f} h"
-    text = f"Zustand seit {hours} unverändert (wartet auf {waiting}), bitte prüfen"
-    return f"stale {path.stat().st_mtime}", text
+    issue = state.get("issue")
+    text = f"Seit {hours} kein Ergebnis (wartet auf {waiting})"
+    # After the merge, stop no longer stops anything.
+    if issue and waiting != "merge_ci":
+        text += f", stop #{issue} bricht den Schritt ab"
+    return f"stale {start}", text
 
 
 def prompt(name):
