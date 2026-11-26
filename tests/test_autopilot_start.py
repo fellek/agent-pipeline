@@ -264,7 +264,7 @@ def test_refuses_without_git_identity(run_start, tmp_path):
     result, lines, *_ = run_start()
 
     assert result.returncode == 1
-    assert "git has no user.name or user.email" in result.stderr
+    assert "git has no user.email, run:" in result.stderr
     assert not lines
 
 

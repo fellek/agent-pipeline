@@ -192,31 +192,6 @@ def test_gh_runs_with_the_token_of_the_project(gate, project, monkeypatch):
     assert (env["GH_TOKEN"], env["GH_REPO"]) == (TOKEN, "o/app")
 
 
-def test_gh_leaves_a_working_directory_closed_to_the_gate(
-    gate, project, tmp_path, monkeypatch
-):
-    closed = tmp_path / "closed"
-    closed.mkdir()
-    monkeypatch.chdir(closed)
-    monkeypatch.setattr(gate.os, "access", lambda path, mode: path != ".")
-    calls = []
-    monkeypatch.setattr(gate.os, "execvpe", lambda *a: calls.append(os.getcwd()))
-
-    gate.run_gh(project, ["pr", "create", "--head", "b", "--base", "main"])
-
-    assert calls == [str(tmp_path / "work" / project.user)]
-
-
-def test_gh_stays_in_an_open_working_directory(gate, project, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    calls = []
-    monkeypatch.setattr(gate.os, "execvpe", lambda *a: calls.append(os.getcwd()))
-
-    gate.run_gh(project, ["issue", "view", "5"])
-
-    assert calls == [str(tmp_path)]
-
-
 def test_refused_gh_does_not_run(gate, project, monkeypatch):
     monkeypatch.setattr(gate.os, "execvpe", lambda *a: pytest.fail("ran gh"))
     with pytest.raises(gate.Refused):

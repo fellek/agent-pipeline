@@ -456,11 +456,6 @@ def run_gh(project, args):
     if problem := gh_problem(args, project.repo):
         raise Refused(problem)
     args, stdin = mark_comment(args, sys.stdin.read)
-    # gh runs git in its working directory, which the caller may keep closed to the
-    # gate, as the clone of update-host; GH_REPO names the repository anyway.
-    if not os.access(".", os.R_OK | os.X_OK):
-        project.work.mkdir(parents=True, exist_ok=True)
-        os.chdir(project.work)
     env = {**os.environ, **project.env()}
     if stdin is None:
         os.execvpe("gh", ["gh", *args], env)
