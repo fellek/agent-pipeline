@@ -24,6 +24,7 @@ def install(tmp_path):
     write_executable(stubs / "chown", f'echo "$1 $2" >> {chowns}')
     write_executable(stubs / "visudo", 'grep -q "NOPASSWD: /opt/pipeline/gate$" "$2"')
     write_executable(stubs / "useradd", "exit 1")
+    write_executable(stubs / "systemctl", f'echo "$*" >> {tmp_path}/systemctl')
 
     def run(*args, token="github_pat_x\n"):
         result = subprocess.run(
@@ -71,7 +72,10 @@ def test_gate_code_belongs_to_root(install):
     assert (opt / "gate").read_text() == (ROOT / "host" / "gate.py").read_text()
     assert mode(opt / "gate") == 0o755
     for name in ("gate", "attestation.py", "trust.py", "gate-review.md", "workflow.md"):
-        assert owners[str(opt / name)] == "root:root"
+        # The executables get their owner before they replace the old ones.
+        assert (
+            owners.get(f"{opt / name}.tmp", owners.get(str(opt / name))) == "root:root"
+        )
         assert not mode(opt / name) & 0o022
 
 
@@ -129,3 +133,26 @@ def test_refuses(install, args, token, message):
     result, *_ = install(*args, token=token)
     assert result.returncode == 1
     assert message in result.stderr
+
+
+def test_installs_update_host_and_its_timer(install, tmp_path):
+    result, root, _home, owners = install("app", "o/app")
+    assert result.returncode == 0, result.stderr
+    opt = root / "opt" / "pipeline"
+    assert (opt / "update-host").read_text() == (
+        ROOT / "host" / "update-host.sh"
+    ).read_text()
+    assert (opt / "pipeline-repo").read_text() == "fellek/agent-pipeline\n"
+    assert owners[f"{opt / 'update-host'}.tmp"] == "root:root"
+    assert owners[str(opt / "pipeline-repo")] == "root:root"
+    assert not list(opt.glob("*.tmp"))
+    units = root / "etc" / "systemd" / "system"
+    assert (
+        "ExecStart=/opt/pipeline/update-host --auto %i"
+        in (units / "pipeline-update@.service").read_text()
+    )
+    assert (units / "pipeline-update@.timer").exists()
+    assert (tmp_path / "systemctl").read_text().splitlines() == [
+        "daemon-reload",
+        "enable --quiet --now pipeline-update@app.timer",
+    ]

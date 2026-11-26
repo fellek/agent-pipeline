@@ -1,0 +1,6 @@
+[Unit]
+Description=Update the pipeline of the autopilot of %i to a new stable release
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pipeline/update-host --auto %i
