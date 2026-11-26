@@ -71,3 +71,15 @@ def test_permission_lookup_failure_is_no_writer(monkeypatch, text):
 
     monkeypatch.setattr(text, "gh", gh)
     assert text.permission("bot") is None
+
+
+def test_a_failed_gh_call_exits_with_its_error(monkeypatch, text):
+    def gh(*args):
+        raise subprocess.CalledProcessError(
+            1, ["gh"], stderr="sudo: no new privileges\n"
+        )
+
+    monkeypatch.setattr(text, "gh", gh)
+    with pytest.raises(SystemExit) as exit:
+        text.main(["7"])
+    assert exit.value.code == "gh failed: sudo: no new privileges"

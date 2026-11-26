@@ -61,11 +61,24 @@ def read_plan(path):
     return real.read_text()
 
 
+def gh_failed(error):
+    # Without gh's stderr the step sees only an exit status, e.g. not the sandbox's
+    # sudo error.
+    sys.exit(f"gh failed: {(error.stderr or '').strip() or error}")
+
+
 def main(argv):
     if len(argv) != 2 or not argv[0].isdigit():
         sys.exit(__doc__)
     number, path = argv
     body = json.dumps({"body": f"{PLAN}\n{read_plan(path).strip()}"})
+    try:
+        post(number, body)
+    except subprocess.CalledProcessError as error:
+        gh_failed(error)
+
+
+def post(number, body):
     found = plan_comment(number)
     if found is None:
         args = (

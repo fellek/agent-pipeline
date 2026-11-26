@@ -85,14 +85,15 @@ def test_queries_review_threads_with_pagination(monkeypatch, gate):
     assert "isResolved" in query
 
 
-def test_gh_failure_raises(monkeypatch, gate):
+def test_gh_failure_exits_with_its_error(monkeypatch, gate):
     def run(args, **kwargs):
-        raise subprocess.CalledProcessError(1, args)
+        raise subprocess.CalledProcessError(1, args, stderr="HTTP 401\n")
 
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(SystemExit) as exit:
         gate.main(["66"])
+    assert exit.value.code == "gh failed: HTTP 401"
 
 
 @pytest.mark.parametrize("argv", [[], ["66", "extra"]])
