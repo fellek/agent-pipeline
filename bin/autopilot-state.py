@@ -521,28 +521,10 @@ class Autopilot:
             self.restart(f"Autopilot startet neu auf {release}")
         if self.resume_parked():
             return
-        untriaged = self.lines("autopilot-poll.py", "untriaged", self.s["label"])
-        if untriaged:
-            issue = min(untriaged, key=lambda i: i["number"])
-            self.to_default()
-            self.s.update(issue=issue["number"], step="setprio", branch=None, pr=None)
-            if "followup" in issue["labels"]:
-                body = self.ok(
-                    "gh",
-                    "issue",
-                    "view",
-                    str(issue["number"]),
-                    "--json",
-                    "body",
-                    "--jq",
-                    ".body",
-                )
-                sentence = re.split(r"(?<=[.!?])\s", body.strip(), maxsplit=1)[0]
-                self.send(
-                    f"#{issue['number']} Neues Folge-Issue: {issue['title']}. {sentence}"
-                )
-            return
         found = self.lines("autopilot-poll.py", "next", self.s["label"])
+        # A ready issue is triaged already; setprio only runs when none is left.
+        if not found and self.pick_untriaged():
+            return
         if not found:
             self.send(f"Keine Issues mit Label {self.s['label']}")
             self.s["waiting_for"] = "new_issue"
@@ -556,6 +538,30 @@ class Autopilot:
             self.s["plan_skip"].remove(issue["number"])
         step = "issue" if skip else "plan-issue"
         self.s.update(issue=issue["number"], branch=branch, pr=None, step=step)
+
+    def pick_untriaged(self):
+        untriaged = self.lines("autopilot-poll.py", "untriaged", self.s["label"])
+        if not untriaged:
+            return False
+        issue = min(untriaged, key=lambda i: i["number"])
+        self.to_default()
+        self.s.update(issue=issue["number"], step="setprio", branch=None, pr=None)
+        if "followup" in issue["labels"]:
+            body = self.ok(
+                "gh",
+                "issue",
+                "view",
+                str(issue["number"]),
+                "--json",
+                "body",
+                "--jq",
+                ".body",
+            )
+            sentence = re.split(r"(?<=[.!?])\s", body.strip(), maxsplit=1)[0]
+            self.send(
+                f"#{issue['number']} Neues Folge-Issue: {issue['title']}. {sentence}"
+            )
+        return True
 
     def lines(self, *args):
         return [json.loads(line) for line in self.ok(*args).splitlines() if line]
