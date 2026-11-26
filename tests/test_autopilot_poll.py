@@ -2,7 +2,7 @@ import json
 import subprocess
 
 import pytest
-from conftest import load_script
+from conftest import load_script, write_executable
 
 SINCE = "2026-11-13T10:00:00Z"
 
@@ -11,6 +11,7 @@ SINCE = "2026-11-13T10:00:00Z"
 def poll(monkeypatch):
     module = load_script("autopilot-poll.py")
     monkeypatch.setattr(module, "maintainer", lambda: "maintainer")
+    monkeypatch.setattr(module, "release_changed", lambda: "")
     return module
 
 
@@ -231,6 +232,24 @@ def test_new_issue_wakes_on_untriaged_issue(monkeypatch, capsys, poll):
     assert events(capsys) == [
         {"type": "untriaged_issue", "number": 60, "title": "Neu", "labels": []}
     ]
+
+
+def test_new_issue_wakes_on_newly_pinned_release(monkeypatch, capsys, poll):
+    fake_gh(monkeypatch, poll, [])
+    monkeypatch.setattr(poll, "release_changed", lambda: "v2")
+
+    poll.wait([("new_issue", "ready")], sleep=no_sleep)
+
+    assert events(capsys) == [{"type": "release", "name": "v2"}]
+
+
+def test_release_check_runs_release_changed(tmp_path, monkeypatch):
+    module = load_script("autopilot-poll.py")
+    script = tmp_path / "release-changed.sh"
+    write_executable(script, "[ $# -eq 0 ] && echo v2")
+    monkeypatch.setattr(module, "RELEASE_CHANGED", script)
+
+    assert module.release_changed() == "v2"
 
 
 def test_next_selects_issue_with_selection_label_only(monkeypatch, capsys, poll):
