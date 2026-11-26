@@ -200,13 +200,7 @@ Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt u
 
 ## Update der Pipeline
 
-Ohne Zutun: Der Timer `pipeline-update@autopilot` (root, alle 15 Minuten) öffnet den PR auf das neueste stabile Release, kündigt ihn per Telegram an und installiert ihn 12 Stunden später: Approve, Merge über das Gate, Gate und Claude Code für `pipeline-gate` und den Projekt-Benutzer in der Version aus `host/versions.sh`. Er nimmt nur das neueste veröffentlichte stabile Release, dessen Tag auf dem Default-Branch der Pipeline liegt, und einen PR, der nur den Pin auf diesen Tag setzt; die Wartezeit beginnt erst, wenn die Ankündigung gesendet ist. Rollbacks gehen nur von Hand. Wer das GitHub-Konto der Pipeline übernimmt, bekommt damit nach 12 Stunden root auf dem Host; 2FA ist Pflicht.
-
-- Abbrechen: den Bump-PR schließen; der Timer lässt dieses Release dann aus.
-- Sofort, ohne Wartezeit, als root (zeigt die Release Notes und fragt): `/opt/pipeline/update-host autopilot`. Ohne offenen PR vorher dem Bot `update` senden.
-- Ausschalten: `systemctl disable --now pipeline-update@autopilot.timer`.
-
-Der Autopilot startet danach von selbst auf dem Release neu, im Leerlauf binnen einer Minute, sonst vor dem nächsten Issue. Fehler meldet der Timer einmal per Telegram, Details im Journal (`journalctl -u pipeline-update@autopilot`). Verlangt das Release eine andere Version des Telegram-Plugins, meldet `autopilot-start.sh` das per Telegram; dann als Projekt-Benutzer `/plugin install` wie in 6.2.
+Ein Timer installiert neue Releases ohne Login, 12 Stunden nach der Ankündigung per Telegram. Alle Schritte und der Weg von Hand: [UPDATE.md](UPDATE.md).
 
 ## Weiteres Projekt auf demselben Host
 
