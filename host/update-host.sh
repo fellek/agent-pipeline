@@ -50,8 +50,11 @@ tag_commit() {
 }
 # A closed, unmerged bump pull request is the maintainer's veto against its release.
 vetoed() {
-  [ "$(gate_as_user gh pr list --state closed --limit 100 --json title,mergedAt \
-    --jq "[.[] | select(.title == \"Bump pipeline to $1\" and .mergedAt == null)] | length")" != 0 ]
+  local count
+  count=$(gate_as_user gh pr list --state closed --limit 100 --json title,mergedAt \
+    --jq "[.[] | select(.title == \"Bump pipeline to $1\" and .mergedAt == null)] | length") \
+    || fail "listing the closed bump pull requests of $repo failed"
+  [ "$count" != 0 ]
 }
 # What the pin at <ref> holds: the tag name in .claude/pipeline-release, else the
 # commit of the submodule.

@@ -42,7 +42,7 @@ def host(tmp_path, pipeline_releases):
         gate,
         f"""echo "$*" >> {state}/gate.log
 case "$1 $2 $3" in
-  "gh pr list") case "$*" in *closed*) cat {state}/vetoes ;; *) cat {state}/prs ;; esac ;;
+  "gh pr list") case "$*" in *closed*) [ ! -e {state}/closed-fails ] || exit 1; cat {state}/vetoes ;; *) cat {state}/prs ;; esac ;;
   "gh pr view")
     [ ! -e {state}/view-fails ] || exit 1
     case "$*" in *files*) cat {state}/files ;; *) echo "- Notes of v2" ;; esac ;;
@@ -463,3 +463,17 @@ def test_auto_needs_the_autopilot_service_for_telegram(host):
     assert result.returncode == 1
     assert "no autopilot service of app" in result.stderr
     assert not log(state, "gate")
+
+
+def test_auto_reports_a_failed_veto_query(host):
+    run, state, _root = host
+    (state / "prs").write_text("")
+    (state / "closed-fails").touch()
+
+    first = run("--auto")
+    second = run("--auto")
+
+    assert (first.returncode, second.returncode) == (1, 1)
+    assert "listing the closed bump pull requests of o/app failed" in first.stderr
+    assert len([line for line in telegram(state) if "gescheitert" in line]) == 1
+    assert not any("git clone" in line for line in log(state, "sudo"))
