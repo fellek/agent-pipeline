@@ -22,14 +22,14 @@ Der Timer läuft als root alle 15 Minuten (`/opt/pipeline/update-host --auto aut
 
 ## 1. Version erhöhen
 
-Ein PR, der `version` in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) erhöht, durch Gate-Review und Merge wie jeder PR dieses Repositorys. Von Hand auf dem Host als root, nachdem die CI des PRs grün ist:
+Ein PR, der `version` in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) erhöht, durch Gate-Review und Merge wie jeder PR dieses Repositorys. Das Gate wählt das Repository nach dem aufrufenden Benutzer, deshalb hier nicht `autopilot`, sondern `<benutzer>`: der Benutzer, dessen Gate dieses Repository hält (der Autopilot der Pipeline selbst). Von Hand auf dessen Host als root, nachdem die CI des PRs grün ist:
 
 ```
-sudo -u autopilot sudo -n -u pipeline-gate /opt/pipeline/gate review <pr> <sha>
-sudo -u autopilot sudo -n -u pipeline-gate /opt/pipeline/gate merge <pr> <sha>
+sudo -u <benutzer> sudo -n -u pipeline-gate /opt/pipeline/gate review <pr> <sha>
+sudo -u <benutzer> sudo -n -u pipeline-gate /opt/pipeline/gate merge <pr> <sha>
 ```
 
-Statt des Reviews durch das Gate geht auch das Verdict des Maintainers: `sudo -u pipeline-gate /opt/pipeline/gate review --manual autopilot <pr> <sha> approve`.
+Statt des Reviews durch das Gate geht auch das Verdict des Maintainers: `sudo -u pipeline-gate /opt/pipeline/gate review --manual <benutzer> <pr> <sha> approve`.
 
 ## 2. Release anlegen
 
