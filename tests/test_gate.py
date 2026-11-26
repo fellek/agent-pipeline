@@ -192,6 +192,35 @@ def test_gh_runs_with_the_token_of_the_project(gate, project, monkeypatch):
     assert (env["GH_TOKEN"], env["GH_REPO"]) == (TOKEN, "o/app")
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root passes every permission check")
+def test_gh_leaves_a_working_directory_in_a_parent_closed_to_the_gate(
+    gate, project, tmp_path, monkeypatch
+):
+    # As the clone of update-host: an open directory inside a mktemp -d one.
+    closed = tmp_path / "closed"
+    (closed / "project").mkdir(parents=True)
+    monkeypatch.chdir(closed / "project")
+    calls = []
+    monkeypatch.setattr(gate.os, "execvpe", lambda *a: calls.append(os.getcwd()))
+    closed.chmod(0o000)
+    try:
+        gate.run_gh(project, ["pr", "create", "--head", "b", "--base", "main"])
+    finally:
+        closed.chmod(0o700)
+
+    assert calls == [str(tmp_path / "work" / project.user)]
+
+
+def test_gh_stays_in_an_open_working_directory(gate, project, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    monkeypatch.setattr(gate.os, "execvpe", lambda *a: calls.append(os.getcwd()))
+
+    gate.run_gh(project, ["issue", "view", "5"])
+
+    assert calls == [str(tmp_path)]
+
+
 def test_refused_gh_does_not_run(gate, project, monkeypatch):
     monkeypatch.setattr(gate.os, "execvpe", lambda *a: pytest.fail("ran gh"))
     with pytest.raises(gate.Refused):
