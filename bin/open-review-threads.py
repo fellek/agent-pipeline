@@ -77,10 +77,19 @@ def unresolved(threads):
     ]
 
 
+def gh_failed(error):
+    # Without gh's stderr the step sees only an exit status, e.g. not the sandbox's
+    # sudo error.
+    sys.exit(f"gh failed: {(error.stderr or '').strip() or error}")
+
+
 def main(argv):
     match argv:
         case [pr]:
-            print(json.dumps(unresolved(threads(pr))))
+            try:
+                print(json.dumps(unresolved(threads(pr))))
+            except subprocess.CalledProcessError as error:
+                gh_failed(error)
         case _:
             sys.exit(__doc__)
 

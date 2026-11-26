@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import pytest
 from conftest import load_script
@@ -123,3 +124,18 @@ def test_reads_only_a_file_under_pipeline(post, tmp_path, monkeypatch, name):
     with pytest.raises(SystemExit) as exit:
         post.main(["7", str(path)])
     assert "no file under .pipeline/" in exit.value.code
+
+
+def test_a_failed_gh_call_exits_with_its_error(post, tmp_path, monkeypatch):
+    def gh(*args, input=None):
+        raise subprocess.CalledProcessError(
+            1, ["gh"], stderr="sudo: no new privileges\n"
+        )
+
+    monkeypatch.setattr(post, "gh", gh)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".pipeline").mkdir()
+    (tmp_path / ".pipeline" / "plan.md").write_text("plan")
+    with pytest.raises(SystemExit) as exit:
+        post.main(["7", ".pipeline/plan.md"])
+    assert exit.value.code == "gh failed: sudo: no new privileges"

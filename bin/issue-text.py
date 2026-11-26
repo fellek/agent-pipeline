@@ -72,10 +72,19 @@ def issue_text(number):
     }
 
 
+def gh_failed(error):
+    # Without gh's stderr the step sees only an exit status, e.g. not the sandbox's
+    # sudo error.
+    sys.exit(f"gh failed: {(error.stderr or '').strip() or error}")
+
+
 def main(argv):
     match argv:
         case [number] if number.isdigit():
-            text = issue_text(number)
+            try:
+                text = issue_text(number)
+            except subprocess.CalledProcessError as error:
+                gh_failed(error)
             if text is None:
                 sys.exit(
                     f"#{number} is a stranger's issue, changed after the latest label "
