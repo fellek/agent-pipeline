@@ -143,7 +143,8 @@ def test_start_sets_the_label(pilot):
     assert pilot.ran("autopilot-poll.py", "next", "next")
 
 
-def test_untriaged_issue_goes_to_setprio_first(pilot):
+def test_untriaged_issue_goes_to_setprio_without_a_ready_issue(pilot):
+    pilot.result("autopilot-poll.py", "next", out="")
     pilot.result(
         "autopilot-poll.py",
         "untriaged",
@@ -157,7 +158,20 @@ def test_untriaged_issue_goes_to_setprio_first(pilot):
     assert actions == [{"skill": "pipeline:setprio", "args": '3 "" ""'}]
 
 
+def test_ready_issue_goes_before_an_untriaged_one(pilot):
+    pilot.result(
+        "autopilot-poll.py",
+        "untriaged",
+        out=json.dumps({"number": 3, "title": "t", "labels": []}),
+    )
+    pilot.event("start", "")
+
+    assert pilot.state["issue"] == 7
+    assert pilot.state["step"] == "plan-issue"
+
+
 def test_new_followup_issue_is_announced(pilot):
+    pilot.result("autopilot-poll.py", "next", out="")
     pilot.result(
         "autopilot-poll.py",
         "untriaged",
