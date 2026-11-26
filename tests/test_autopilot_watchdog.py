@@ -47,7 +47,7 @@ def test_stale_running_step_is_reported_once(watchdog):
 
 def test_long_running_fork_is_reported_although_the_state_changed(watchdog):
     started = datetime.fromtimestamp(NOW - 4 * 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    write_state("step", 0, issue=82, task_since=started)
+    write_state("step", 0, issue=82, task_id="t1", task_since=started)
 
     watchdog.check(NOW)
 
@@ -55,9 +55,24 @@ def test_long_running_fork_is_reported_although_the_state_changed(watchdog):
     assert watchdog.sent == [f"autopilot-app: {text}"]
 
 
+def test_task_since_of_an_ended_task_is_ignored(watchdog):
+    started = datetime.fromtimestamp(NOW - 4 * 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_state("step", 0, issue=82, task_id=None, task_since=started)
+    watchdog.check(NOW)
+    assert watchdog.sent == []
+
+
+def test_no_stop_hint_after_the_merge(watchdog):
+    write_state("merge_ci", 4, issue=82)
+    watchdog.check(NOW)
+    assert watchdog.sent == [
+        "autopilot-app: Seit 4 h kein Ergebnis (wartet auf merge_ci)"
+    ]
+
+
 def test_recently_started_fork_is_no_finding(watchdog):
     started = datetime.fromtimestamp(NOW - 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    write_state("step", 10, issue=82, task_since=started)
+    write_state("step", 10, issue=82, task_id="t1", task_since=started)
     watchdog.check(NOW)
     assert watchdog.sent == []
 

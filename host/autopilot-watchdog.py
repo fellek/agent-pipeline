@@ -46,7 +46,8 @@ def stale(now):
         return None
     state = json.loads(path.read_text())
     waiting = state.get("waiting_for")
-    since = state.get("task_since")
+    # task_since outlives its task until the issue ends.
+    since = state.get("task_since") if state.get("task_id") else None
     start = datetime.fromisoformat(since).timestamp() if since else path.stat().st_mtime
     age = now - start
     if age < STALE_SECONDS or waiting in IDLE:
@@ -54,7 +55,8 @@ def stale(now):
     hours = f"{age / 3600:.0f} h"
     issue = state.get("issue")
     text = f"Seit {hours} kein Ergebnis (wartet auf {waiting})"
-    if issue:
+    # After the merge, stop no longer stops anything.
+    if issue and waiting != "merge_ci":
         text += f", stop #{issue} bricht den Schritt ab"
     return f"stale {start}", text
 
