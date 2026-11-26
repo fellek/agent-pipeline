@@ -94,6 +94,9 @@ ISSUE_FIELDS = {
     "questions": 0,
     "failure": None,
     "task_id": None,
+    # When the fork or task of task_id started: the watchdog reports a step that
+    # never ends, also while Telegram commands rewrite the state.
+    "task_since": None,
     "park": None,
     "head": None,
     "merge": None,
@@ -460,7 +463,7 @@ class Autopilot:
         if pending == "poller":
             self.s["poller"] = task_id
         elif pending:
-            self.s["task_id"] = task_id
+            self.s.update(task_id=task_id, task_since=now())
         self.wait()
 
     def on_done(self, task_id, text, usage=()):
