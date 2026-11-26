@@ -886,6 +886,24 @@ def test_stop_stops_the_fork_and_parks(pilot):
     assert entry["step"] == "issue"
 
 
+@pytest.mark.parametrize(
+    ("text", "reason"), [("#7 stop", "abgebrochen"), ("#7 park", "manuell")]
+)
+def test_command_word_after_the_issue_is_no_answer(pilot, text, reason):
+    at_step(pilot, "issue", question="Q?")
+    message(pilot, text)
+    assert not pilot.ran("gh", "issue", "comment")
+    assert pilot.state["park"] == reason
+
+
+def test_stop_after_a_parked_issue_is_no_answer(pilot):
+    pilot.state = {"parked": [parked(reason="abgebrochen")]}
+    message(pilot, "#4 stop")
+    assert not pilot.ran("gh", "issue", "comment")
+    assert pilot.state["parked"][0]["answer"] is None
+    assert pilot.texts() == ["#4 ist schon geparkt"]
+
+
 def test_park_of_another_issue(pilot):
     at_step(pilot, "issue", parked=[parked()])
     message(pilot, "park #9")
