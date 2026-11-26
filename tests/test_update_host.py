@@ -26,6 +26,7 @@ def host(tmp_path, pipeline_releases):
         "files": PIN,
         "have": "v2",
         "pinned": "v1",
+        "newest": "v2",
         "stable": "true",
         "vetoes": "0",
         "merge-failures": "",
@@ -42,10 +43,12 @@ def host(tmp_path, pipeline_releases):
         f"""echo "$*" >> {state}/gate.log
 case "$1 $2 $3" in
   "gh pr list") case "$*" in *closed*) cat {state}/vetoes ;; *) cat {state}/prs ;; esac ;;
-  "gh pr view") case "$*" in *files*) cat {state}/files ;; *) echo "- Notes of v2" ;; esac ;;
+  "gh pr view")
+    [ ! -e {state}/view-fails ] || exit 1
+    case "$*" in *files*) cat {state}/files ;; *) echo "- Notes of v2" ;; esac ;;
   "gh api "*) case "$*" in *ref=HEAD*) cat {state}/pinned ;; *) cat {state}/have ;; esac ;;
   "gh run list") cat {state}/pending ;;
-  "gh release list") echo v2 ;;
+  "gh release list") cat {state}/newest ;;
   "gh release view") cat {state}/stable ;;
   "review --manual "*) touch {state}/approved ;;
   "merge "*)
@@ -85,7 +88,9 @@ exec "$@\"""",
     send = project / SUB / "bin/telegram-send.py"
     send.parent.mkdir(parents=True)
     write_executable(
-        send, f'cat >> {state}/telegram.log; echo "cwd $PWD" >> {state}/telegram.log'
+        send,
+        f"[ ! -e {state}/telegram-fails ] || exit 1\n"
+        f'cat >> {state}/telegram.log; echo "cwd $PWD" >> {state}/telegram.log',
     )
 
     def run(*args, user="app", answer="y\n"):
@@ -385,9 +390,76 @@ def test_auto_refuses_a_tag_off_the_default_branch(host, tmp_path):
     git(side, "push", "-q", "origin", "v3")
     (state / "prs").write_text(BUMP.replace("v2", "v3") + "\n")
     (state / "have").write_text("v3\n")
+    (state / "newest").write_text("v3\n")
 
     result = run("--auto")
 
     assert result.returncode == 1
     assert "v3 is not on the default branch" in result.stderr
     assert not approved(state)
+
+
+def test_existing_approve_is_not_posted_again(host):
+    run, state, _root = host
+    (state / "approved").touch()
+
+    result = run()
+
+    assert result.returncode == 0, result.stderr
+    assert merges(state) == ["merge 7 abc"]
+    assert not approved(state)
+
+
+@pytest.mark.parametrize(
+    ("newest", "vetoes", "error"),
+    [
+        ("v3", "0", "#7 bumps to v2, not to the newest release v3"),
+        ("v2", "1", "#7 bumps to v2, which a closed bump pull request vetoed"),
+    ],
+    ids=["older", "vetoed"],
+)
+def test_auto_takes_only_the_newest_unvetoed_release(host, newest, vetoes, error):
+    run, state, _root = host
+    (state / "newest").write_text(newest + "\n")
+    (state / "vetoes").write_text(vetoes + "\n")
+
+    result = run("--auto")
+
+    assert result.returncode == 1
+    assert error in result.stderr
+    assert not approved(state)
+
+
+def test_auto_waits_only_after_a_sent_announcement(host):
+    run, state, root = host
+    (state / "telegram-fails").touch()
+
+    result = run("--auto")
+
+    assert result.returncode == 1
+    assert "announcing v2 via Telegram failed" in result.stderr
+    assert not (root / "var/lib/pipeline-update/app-abc").exists()
+
+
+def test_auto_reports_an_unexpected_failure_once(host):
+    run, state, _root = host
+    (state / "view-fails").touch()
+
+    first = run("--auto")
+    second = run("--auto")
+
+    assert (first.returncode, second.returncode) == (1, 1)
+    assert "failed, see journalctl -u pipeline-update@app" in first.stderr
+    assert len([line for line in telegram(state) if "gescheitert" in line]) == 1
+
+
+def test_auto_needs_the_autopilot_service_for_telegram(host):
+    run, state, _root = host
+    for unit in (run.home / ".config/systemd/user").iterdir():
+        unit.unlink()
+
+    result = run("--auto")
+
+    assert result.returncode == 1
+    assert "no autopilot service of app" in result.stderr
+    assert not log(state, "gate")

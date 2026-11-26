@@ -27,38 +27,31 @@ fail() {
   [ -z "$auto" ] || notify_once "Pipeline-Update gescheitert: $*"
   exit 1
 }
-
-if [ "${1-}" = --auto ]; then
-  auto=yes
-  shift
-fi
-[ $# -eq 1 ] || fail "usage: update-host [--auto] <user>"
-user=$1
-[ -n "$root" ] || [ "$(id -u)" = 0 ] || fail "run as root"
-store=$root/etc/pipeline-gate/projects/$user
-[ -s "$store/repo" ] || fail "no gate for $user, see install-gate.sh"
-repo=$(cat "$store/repo")
-pipeline_repo=$(cat "$root/opt/pipeline/pipeline-repo") || fail "run install-gate.sh of a newer release"
-pipeline_url=https://github.com/$pipeline_repo
-cd /
+# Every failure of the timer reaches the maintainer, not only the journal.
+trap 'fail "line $LINENO failed, see journalctl -u pipeline-update@${user-}"' ERR
 
 # The gate selects the project by its calling user.
 gate_as_user() { sudo -u "$user" sudo -n -u pipeline-gate "$gate" "$@" </dev/null; }
 # The autopilot's own script sends it, with the bot and chat of the project.
 notify() {
-  [ -n "$project" ] || return 0
+  [ -n "$project" ] || return 1
   printf '%s\n' "$1" | sudo -u "$user" -H bash -c 'cd "$1" && exec .claude/skills/pipeline/bin/telegram-send.py' \
-    _ "$project" >/dev/null 2>&1 || true
+    _ "$project" >/dev/null 2>&1
 }
 # The timer would repeat a lasting failure every run.
 notify_once() {
   [ "$(cat "$state/$user.error" 2>/dev/null)" != "$1" ] || return 0
-  printf '%s\n' "$1" >"$state/$user.error"
-  notify "$1"
+  printf '%s\n' "$1" 2>/dev/null >"$state/$user.error" || true
+  notify "$1" || true
 }
 # The commit of a release tag of the pipeline.
 tag_commit() {
   git ls-remote "$pipeline_url" "refs/tags/$1" "refs/tags/$1^{}" | tail -1 | cut -f1
+}
+# A closed, unmerged bump pull request is the maintainer's veto against its release.
+vetoed() {
+  [ "$(gate_as_user gh pr list --state closed --limit 100 --json title,mergedAt \
+    --jq "[.[] | select(.title == \"Bump pipeline to $1\" and .mergedAt == null)] | length")" != 0 ]
 }
 # What the pin at <ref> holds: the tag name in .claude/pipeline-release, else the
 # commit of the submodule.
@@ -79,26 +72,41 @@ open_bump() {
   ' _ "$repo" "$pin" "$sub"
 }
 
+if [ "${1-}" = --auto ]; then
+  auto=yes
+  shift
+fi
+[ $# -eq 1 ] || fail "usage: update-host [--auto] <user>"
+user=$1
+[ -n "$root" ] || [ "$(id -u)" = 0 ] || fail "run as root"
 if [ -n "$auto" ]; then
   mkdir -p "$state"
   chmod 0700 "$state"
   home=$(getent passwd "$user" | cut -d: -f6)
   project=$(sed -n 's/^WorkingDirectory=//p' "$home"/.config/systemd/user/autopilot-*.service 2>/dev/null | head -1) || true
+  # Without Telegram nobody learns of an update in time to veto it.
+  [ -n "$project" ] || fail "no autopilot service of $user, so no Telegram to announce updates"
 fi
+store=$root/etc/pipeline-gate/projects/$user
+[ -s "$store/repo" ] || fail "no gate for $user, see install-gate.sh"
+repo=$(cat "$store/repo")
+pipeline_repo=$(cat "$root/opt/pipeline/pipeline-repo") || fail "run install-gate.sh of a newer release"
+pipeline_url=https://github.com/$pipeline_repo
+cd /
 
 bumps=$(gate_as_user gh pr list --state open --json number,headRefName,headRefOid,title,url \
   --jq '.[] | select(.headRefName | startswith("bump-pipeline-")) | [.number, .headRefOid, .title, .url] | @tsv') \
   || fail "listing the pull requests of $repo failed, see above"
-if [ -z "$bumps" ]; then
-  [ -n "$auto" ] || fail "$repo has no open bump pull request, send update to the bot first"
+if [ -n "$auto" ]; then
   newest=$(gate_as_user gh release list --repo "$pipeline_repo" --exclude-drafts --exclude-pre-releases \
     --limit 1 --json tagName --jq '.[0].tagName // ""') || fail "listing the releases of $pipeline_repo failed"
   [[ $newest =~ ^[A-Za-z0-9._-]+$ ]] || fail "$pipeline_repo has no stable release"
+fi
+if [ -z "$bumps" ]; then
+  [ -n "$auto" ] || fail "$repo has no open bump pull request, send update to the bot first"
   pinned=$(pinned_at HEAD | tr -d '[:space:]') || fail "reading the pinned release of $repo failed"
   if [ "$pinned" != "$newest" ] && [ "$pinned" != "$(tag_commit "$newest")" ]; then
-    vetoes=$(gate_as_user gh pr list --state closed --limit 100 --json title,mergedAt \
-      --jq "[.[] | select(.title == \"Bump pipeline to $newest\" and .mergedAt == null)] | length")
-    [ "$vetoes" != 0 ] || open_bump >/dev/null || fail "opening the bump pull request to $newest failed"
+    vetoed "$newest" || open_bump >/dev/null || fail "opening the bump pull request to $newest failed"
   fi
   rm -f "$state/$user.error"
   exit 0
@@ -108,6 +116,12 @@ $bumps"
 IFS=$'\t' read -r number sha title url <<<"$bumps"
 tag=${title#Bump pipeline to }
 [[ $tag != "$title" && $tag =~ ^[A-Za-z0-9._-]+$ ]] || fail "#$number is no bump: $title"
+if [ -n "$auto" ]; then
+  # The session can open a bump too: the timer takes only the newest release, so no
+  # downgrade, and none the maintainer vetoed. Other bumps are the manual path's.
+  [ "$tag" = "$newest" ] || fail "#$number bumps to $tag, not to the newest release $newest; close it or run update-host $user"
+  ! vetoed "$tag" || fail "#$number bumps to $tag, which a closed bump pull request vetoed; close it or run update-host $user"
+fi
 
 tree=$(mktemp -d)
 trap 'rm -rf "$tree"' EXIT
@@ -134,8 +148,10 @@ if [ -n "$auto" ]; then
     || fail "$tag is not on the default branch of $pipeline_repo"
   announced=$state/$user-$sha
   if [ ! -e "$announced" ]; then
+    # The wait starts only once the maintainer can know of the update.
+    notify "Pipeline-Update auf $tag ($url) folgt ab $(date -d "@$(($(date +%s) + delay))" '+%d.%m. %H:%M'). Abbrechen: PR schließen. Sofort, als root: /opt/pipeline/update-host $user" \
+      || fail "announcing $tag via Telegram failed"
     touch "$announced"
-    notify "Pipeline-Update auf $tag ($url) folgt ab $(date -d "@$(($(date +%s) + delay))" '+%d.%m. %H:%M'). Abbrechen: PR schließen. Sofort, als root: /opt/pipeline/update-host $user"
     exit 0
   fi
   [ $(($(date +%s) - $(stat -c %Y "$announced"))) -ge $delay ] || exit 0
@@ -191,5 +207,5 @@ done
 echo "gate and Claude Code $version of $tag installed; the autopilot restarts on $tag within a minute when idle, otherwise before its next issue"
 if [ -n "$auto" ]; then
   rm -f "$state/$user.error" "$state/$user-$sha"
-  notify "Pipeline-Update auf $tag installiert, der Autopilot startet darauf neu."
+  notify "Pipeline-Update auf $tag installiert, der Autopilot startet darauf neu." || true
 fi

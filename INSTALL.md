@@ -200,7 +200,7 @@ Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt u
 
 ## Update der Pipeline
 
-Ohne Zutun: Der Timer `pipeline-update@autopilot` (root, alle 15 Minuten) öffnet den PR auf das neueste stabile Release, kündigt ihn per Telegram an und installiert ihn 12 Stunden später: Approve, Merge über das Gate, Gate und Claude Code für `pipeline-gate` und den Projekt-Benutzer in der Version aus `host/versions.sh`. Er nimmt nur ein veröffentlichtes stabiles Release, dessen Tag auf dem Default-Branch der Pipeline liegt, und einen PR, der nur den Pin auf diesen Tag setzt. Wer das GitHub-Konto der Pipeline übernimmt, bekommt damit nach 12 Stunden root auf dem Host; 2FA ist Pflicht.
+Ohne Zutun: Der Timer `pipeline-update@autopilot` (root, alle 15 Minuten) öffnet den PR auf das neueste stabile Release, kündigt ihn per Telegram an und installiert ihn 12 Stunden später: Approve, Merge über das Gate, Gate und Claude Code für `pipeline-gate` und den Projekt-Benutzer in der Version aus `host/versions.sh`. Er nimmt nur das neueste veröffentlichte stabile Release, dessen Tag auf dem Default-Branch der Pipeline liegt, und einen PR, der nur den Pin auf diesen Tag setzt; die Wartezeit beginnt erst, wenn die Ankündigung gesendet ist. Rollbacks gehen nur von Hand. Wer das GitHub-Konto der Pipeline übernimmt, bekommt damit nach 12 Stunden root auf dem Host; 2FA ist Pflicht.
 
 - Abbrechen: den Bump-PR schließen; der Timer lässt dieses Release dann aus.
 - Sofort, ohne Wartezeit, als root (zeigt die Release Notes und fragt): `/opt/pipeline/update-host autopilot`. Ohne offenen PR vorher dem Bot `update` senden.
