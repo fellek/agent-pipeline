@@ -46,11 +46,12 @@ Als Projekt-Benutzer (`sudo -iu autopilot`):
 Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benutzer `pipeline-gate`, den alle Projekte des Hosts teilen. Der Projekt-Benutzer hat keinen Token; `gh` und `git` erreichen GitHub über `sudo -u pipeline-gate /opt/pipeline/gate`. So kann die Session weder auf den Default-Branch pushen noch mergen oder ein Review fälschen, auch wenn GitHub kein Ruleset durchsetzt ([Merge und Review](docs/autopilot.md#merge-und-review)).
 
 1. Einen fine-grained Token nur für das Projekt-Repository mit Ablaufdatum (etwa 90 Tage) anlegen, mit den Rechten Contents, Issues und Pull requests (Lesen und Schreiben) sowie Actions und Metadata (Lesen). `gh pr checks` braucht `checks=read`, das fine-grained Tokens nicht anbieten; der Autopilot nutzt deshalb `gh run`.
-2. Dieses Repository auf dem Release-Tag klonen und das Gate installieren; `read` wartet auf den Token (unsichtbare Eingabe):
+2. Dieses Repository auf dem Release-Tag in ein eigenes Verzeichnis klonen und das Gate installieren; `read` wartet auf den Token (unsichtbare Eingabe). `mktemp -d` statt eines festen Pfads unter `/tmp`: den könnte der Projekt-Benutzer vorher anlegen und die Dateien tauschen, die `install-gate.sh` als root installiert.
 
    ```
-   git clone --branch <tag> https://github.com/fellek/agent-pipeline /tmp/agent-pipeline
-   cd /tmp/agent-pipeline
+   d=$(mktemp -d)
+   git clone --branch <tag> https://github.com/fellek/agent-pipeline "$d/pipeline"
+   cd "$d/pipeline"
    read -rs t && printf '%s\n' "$t" | sudo host/install-gate.sh autopilot <owner>/<projekt>
    ```
 
@@ -64,7 +65,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
    sudo -u pipeline-gate -H bash -c 'cd && ~/.local/bin/claude'
    ```
 
-   In `claude` dann `/login` ausführen und die Session beenden. Den Klon braucht danach niemand mehr: `rm -rf /tmp/agent-pipeline`.
+   In `claude` dann `/login` ausführen und die Session beenden. Den Klon braucht danach niemand mehr: `cd && rm -rf "$d"`.
 4. Im Repository unter Settings, Secrets and variables, Actions das Secret `PIPELINE_REVIEW_KEY` mit der Ausgabe von
 
    ```
@@ -74,7 +75,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
    anlegen. Ohne Secret zählt `agent-review` ein Review nach seinem Text, mit Warnung.
 5. Der Projekt-Benutzer darf keinen eigenen Token haben (kein `~/.config/gh/hosts.yml`, kein `GH_TOKEN`); `autopilot-start.sh` bricht sonst ab.
 
-Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2 (mit frischem Klon) an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates: der Autopilot pausiert mit dem Fehler, im Leerlauf nach drei gescheiterten Abfragen des Pollers.
+Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2, mit einem neuen Klon per `mktemp -d`, an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates: der Autopilot pausiert mit dem Fehler, im Leerlauf nach drei gescheiterten Abfragen des Pollers.
 
 Bei jedem Update installiert `update-host` das Gate des neuen Releases ([Update der Pipeline](#update-der-pipeline)); `autopilot-start.sh` warnt, solange das installierte Gate von dem des Releases abweicht.
 
