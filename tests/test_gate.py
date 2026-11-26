@@ -489,6 +489,27 @@ def reviewing(gate, project, monkeypatch, tmp_path):
     return result, posted, gh_calls
 
 
+def test_export_removes_symlinks(gate, project, git_identity, tmp_path):
+    work = tmp_path / "src"
+    work.mkdir()
+    git(work, "init", "-q")
+    (work / "dir").mkdir()
+    (work / "dir" / "file").write_text("x")
+    (work / "link").symlink_to("/etc")
+    (work / "dir" / "link").symlink_to("file")
+    git(work, "add", ".")
+    git(work, "commit", "-qm", "c")
+    project.mirror = work / ".git"
+    folder = tmp_path / "tree"
+
+    gate.export(project, "HEAD", folder)
+
+    assert (folder / "dir" / "file").read_text() == "x"
+    assert not (folder / "link").is_symlink()
+    assert not (folder / "dir" / "link").is_symlink()
+    assert not (folder / "link").exists()
+
+
 def test_review_posts_an_attested_verdict(gate, project, reviewing, capsys):
     _result, posted, _ = reviewing
     gate.review(project, 5, SHA)
