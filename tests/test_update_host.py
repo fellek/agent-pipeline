@@ -1,8 +1,7 @@
-import getpass
 import subprocess
 
 import pytest
-from conftest import PIPELINE_URL, ROOT, git, write_executable
+from conftest import PIPELINE_URL, ROOT, commit, git, write_executable
 
 SUB = ".claude/skills/pipeline"
 PIN = ".claude/pipeline-release"
@@ -11,10 +10,8 @@ BUMP = "7\tabc\tBump pipeline to v2\thttps://github.com/o/app/pull/7"
 
 @pytest.fixture
 def host(tmp_path, pipeline_releases):
-    """The maintainer's clone at v1, a gate stub for user app and the stubs of
-    install-gate.sh; run() runs update-host.sh of the clone."""
-    clone = tmp_path / "maintainer"
-    git(tmp_path, "clone", "-q", "--branch", "v1", PIPELINE_URL, str(clone))
+    """A gate stub for user app, the stubs of install-gate.sh and the Telegram
+    script of the project; the releases at PIPELINE_URL. run() runs update-host.sh."""
     root, stubs, home = tmp_path / "root", tmp_path / "stubs", tmp_path / "home"
     for path in (stubs, home, root / "etc/pipeline-gate/projects/app"):
         path.mkdir(parents=True)
@@ -24,22 +21,38 @@ def host(tmp_path, pipeline_releases):
     (store / "review-key").write_text("k" * 64 + "\n")
     state = tmp_path / "state"
     state.mkdir()
-    (state / "prs").write_text(BUMP + "\n")
-    (state / "files").write_text(PIN + "\n")
-    (state / "have").write_text("v2\n")
-    (state / "merge-failures").write_text("")
-    (state / "pending").write_text("1\n")
+    for name, content in {
+        "prs": BUMP,
+        "files": PIN,
+        "have": "v2",
+        "pinned": "v1",
+        "stable": "true",
+        "vetoes": "0",
+        "merge-failures": "",
+        "pending": "1",
+    }.items():
+        (state / name).write_text(content + "\n" if content else "")
     gate = root / "opt/pipeline/gate"
     gate.parent.mkdir(parents=True)
+    (root / "opt/pipeline/pipeline-repo").write_text(
+        PIPELINE_URL.removeprefix("https://github.com/") + "\n"
+    )
     write_executable(
         gate,
         f"""echo "$*" >> {state}/gate.log
 case "$1 $2 $3" in
-  "gh pr list") cat {state}/prs ;;
+  "gh pr list") case "$*" in *closed*) cat {state}/vetoes ;; *) cat {state}/prs ;; esac ;;
   "gh pr view") case "$*" in *files*) cat {state}/files ;; *) echo "- Notes of v2" ;; esac ;;
-  "gh api "*) cat {state}/have ;;
+  "gh api "*) case "$*" in *ref=HEAD*) cat {state}/pinned ;; *) cat {state}/have ;; esac ;;
   "gh run list") cat {state}/pending ;;
+  "gh release list") echo v2 ;;
+  "gh release view") cat {state}/stable ;;
+  "review --manual "*) touch {state}/approved ;;
   "merge "*)
+    if [ ! -e {state}/approved ]; then
+      echo "gate: no attested approve on $3" >&2
+      exit 1
+    fi
     if [ -s {state}/merge-always ]; then
       cat {state}/merge-always >&2
       exit 1
@@ -64,21 +77,37 @@ exec "$@\"""",
     )
     write_executable(stubs / "chown", "")
     write_executable(stubs / "visudo", "")
+    write_executable(stubs / "systemctl", "")
+    project = tmp_path / "project"
+    units = home / ".config/systemd/user"
+    units.mkdir(parents=True)
+    (units / "autopilot-app.service").write_text(f"WorkingDirectory={project}\n")
+    send = project / SUB / "bin/telegram-send.py"
+    send.parent.mkdir(parents=True)
+    write_executable(
+        send, f'cat >> {state}/telegram.log; echo "cwd $PWD" >> {state}/telegram.log'
+    )
 
-    def run(user="app", answer="y\n"):
+    def run(*args, user="app", answer="y\n"):
         return subprocess.run(
-            [str(clone / "host/update-host.sh"), user],
+            [str(ROOT / "host/update-host.sh"), *args, user],
             input=answer,
             env={
                 "PATH": f"{stubs}:/usr/bin:/bin",
+                "HOME": str(home),
                 "GATE_ROOT": str(root),
                 "GIT_CONFIG_GLOBAL": str(tmp_path / "gitconfig"),
+                "GIT_AUTHOR_NAME": "t",
+                "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_NAME": "t",
+                "GIT_COMMITTER_EMAIL": "t@t",
             },
             capture_output=True,
             text=True,
             check=False,
         )
 
+    run.home = home
     return run, state, root
 
 
@@ -126,7 +155,7 @@ def test_submodule_must_point_at_the_tag_and_merge_waits_for_runs(
 
     assert result.returncode == 0, result.stderr
     assert "waiting: gate: runs not passed: CI" in result.stdout
-    assert merges(state) == ["merge 7 abc", "merge 7 abc"]
+    assert merges(state) == ["merge 7 abc"] * 3
 
 
 @pytest.mark.parametrize(
@@ -194,18 +223,18 @@ def test_merge_waits_for_a_required_status_check(host):
     result = run()
 
     assert result.returncode == 0, result.stderr
-    assert len(merges(state)) == 2
+    assert len(merges(state)) == 3
 
 
 @pytest.mark.parametrize(
     ("refusal", "pending"),
     [
-        ("gate: no attested approve on abc", "1"),
+        ("gate: #7 is not open", "1"),
         ("gate: 1 review threads are open; runs not passed: CI", "1"),
         ("gate: runs not passed: CI", "0"),
         ("gate: gh pr merge failed: Pull request is not mergeable", "1"),
     ],
-    ids=["no_approve", "threads_and_runs", "failed_runs", "conflict"],
+    ids=["closed", "threads_and_runs", "failed_runs", "conflict"],
 )
 def test_lasting_refusal_stops_before_the_gate_is_installed(host, refusal, pending):
     run, state, root = host
@@ -216,7 +245,7 @@ def test_lasting_refusal_stops_before_the_gate_is_installed(host, refusal, pendi
 
     assert result.returncode == 1
     assert f"merging #7 failed: {refusal}" in result.stderr
-    assert len(merges(state)) == 1
+    assert len(merges(state)) == 2
     assert "#!/usr/bin/env bash" in (root / "opt/pipeline/gate").read_text()
 
 
@@ -228,18 +257,137 @@ def test_merge_gives_up_after_30_minutes(host):
 
     assert result.returncode == 1
     assert "#7 still not mergeable after 30 minutes" in result.stderr
-    assert len(merges(state)) == 60
+    assert len(merges(state)) == 61
     assert "#!/usr/bin/env bash" in (root / "opt/pipeline/gate").read_text()
 
 
-def test_refuses_a_clone_of_the_autopilot_user(host):
-    run, _state, root = host
-    me = getpass.getuser()
-    store = root / "etc/pipeline-gate/projects" / me
-    store.mkdir()
-    (store / "repo").write_text("o/app\n")
+def telegram(state):
+    return log(state, "telegram")
 
-    result = run(user=me)
+
+def test_installs_the_claude_code_version_of_the_release(host):
+    run, state, _root = host
+    claude = run.home / ".local/bin/claude"
+    claude.parent.mkdir(parents=True, exist_ok=True)
+    write_executable(
+        claude,
+        f'[ "$1" = --version ] && echo "0.0.1 (Claude Code)" || echo "$*" >> {state}/claude.log',
+    )
+    version = next(
+        line.split("=", 1)[1]
+        for line in (ROOT / "host/versions.sh").read_text().splitlines()
+        if line.startswith("claude_code=")
+    )
+
+    result = run()
+
+    assert result.returncode == 0, result.stderr
+    # The stub sudo keeps HOME, so both accounts reach the same stub.
+    assert log(state, "claude") == [f"install {version}"] * 2
+
+
+@pytest.fixture
+def app_remote(tmp_path, host):
+    """o/app as a clone of the pipeline pinned to v1, and a gh stub for bump.sh."""
+    work, remote = tmp_path / "app-work", tmp_path / "app.git"
+    git(tmp_path, "clone", "-q", PIPELINE_URL, str(work))
+    commit(work, PIN, "v1\n")
+    git(tmp_path, "init", "-q", "--bare", str(remote))
+    git(work, "push", "-q", "--tags", str(remote), "HEAD")
+    with (tmp_path / "gitconfig").open("a") as config:
+        config.write(f'[url "{remote}"]\n\tinsteadOf = https://github.com/o/app\n')
+    write_executable(
+        tmp_path / "stubs" / "gh",
+        f"""echo "$*" >> {tmp_path}/state/gh.log
+case "$1 $2" in
+  "release list") echo v2 ;;
+  "release view") echo "- Notes of v2" ;;
+esac""",
+    )
+    return remote
+
+
+def test_auto_opens_the_bump_to_the_newest_release(host, app_remote):
+    run, state, _root = host
+    (state / "prs").write_text("")
+
+    result = run("--auto")
+
+    assert result.returncode == 0, result.stderr
+    assert git(app_remote, "show", f"bump-pipeline-v2:{PIN}").strip() == "v2"
+    assert any(line.startswith("pr create") for line in log(state, "gh"))
+    assert not approved(state)
+
+
+@pytest.mark.parametrize(
+    ("pinned", "vetoes"), [("v2", "0"), ("v1", "1")], ids=["current", "vetoed"]
+)
+def test_auto_opens_no_bump(host, pinned, vetoes):
+    run, state, _root = host
+    (state / "prs").write_text("")
+    (state / "pinned").write_text(pinned + "\n")
+    (state / "vetoes").write_text(vetoes + "\n")
+
+    result = run("--auto")
+
+    assert result.returncode == 0, result.stderr
+    assert not log(state, "gh")
+    assert not any("git clone" in line for line in log(state, "sudo"))
+
+
+def test_auto_announces_first_and_merges_12_hours_later(host, tmp_path):
+    run, state, root = host
+    announced = root / "var/lib/pipeline-update/app-abc"
+
+    first = run("--auto", answer="")
+    soon = run("--auto", answer="")
+
+    assert (first.returncode, soon.returncode) == (0, 0), first.stderr + soon.stderr
+    assert not approved(state)
+    assert (
+        "Pipeline-Update auf v2 (https://github.com/o/app/pull/7) folgt ab"
+        in (telegram(state)[0])
+    )
+    assert telegram(state)[1] == f"cwd {tmp_path / 'project'}"
+    assert len(telegram(state)) == 2
+
+    subprocess.run(["touch", "-d", "13 hours ago", str(announced)], check=True)
+    later = run("--auto", answer="")
+
+    assert later.returncode == 0, later.stderr
+    assert approved(state)
+    assert (root / "opt/pipeline/gate").read_text() == (
+        ROOT / "host/gate.py"
+    ).read_text()
+    assert "Pipeline-Update auf v2 installiert" in telegram(state)[2]
+    assert not announced.exists()
+
+
+def test_auto_refuses_a_prerelease_and_reports_it_once(host):
+    run, state, _root = host
+    (state / "stable").write_text("false\n")
+
+    first = run("--auto")
+    second = run("--auto")
+
+    assert (first.returncode, second.returncode) == (1, 1)
+    assert "v2 is no published stable release" in first.stderr
+    assert len([line for line in telegram(state) if "gescheitert" in line]) == 1
+    assert not approved(state)
+
+
+def test_auto_refuses_a_tag_off_the_default_branch(host, tmp_path):
+    run, state, _root = host
+    side = tmp_path / "side"
+    git(tmp_path, "clone", "-q", PIPELINE_URL, str(side))
+    commit(side, "side", "side")
+    git(side, "tag", "v3")
+    git(side, "push", "-q", "origin", "v3")
+    (state / "prs").write_text(BUMP.replace("v2", "v3") + "\n")
+    (state / "have").write_text("v3\n")
+
+    result = run("--auto")
 
     assert result.returncode == 1
-    assert "run the maintainer's clone of the pipeline" in result.stderr
+    assert "v3 is not on the default branch" in result.stderr
+    assert not approved(state)

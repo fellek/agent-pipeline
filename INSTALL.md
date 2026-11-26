@@ -49,12 +49,12 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
 2. Dieses Repository auf dem Release-Tag klonen und das Gate installieren; `read` wartet auf den Token (unsichtbare Eingabe):
 
    ```
-   git clone --branch <tag> https://github.com/fellek/agent-pipeline ~/agent-pipeline
-   cd ~/agent-pipeline
+   git clone --branch <tag> https://github.com/fellek/agent-pipeline /tmp/agent-pipeline
+   cd /tmp/agent-pipeline
    read -rs t && printf '%s\n' "$t" | sudo host/install-gate.sh autopilot <owner>/<projekt>
    ```
 
-   Es legt `pipeline-gate` an, installiert das Gate unter `/opt/pipeline` (Eigentümer root), legt Token und Review-Schlüssel unter `/etc/pipeline-gate/projects/autopilot` ab (nur für `pipeline-gate` lesbar), erlaubt dem Benutzer per sudoers nur das Gate und leitet `gh` (`~/.local/bin/gh`) und `git` (`ext::`-Transport in `~/.gitconfig`) des Benutzers durch das Gate.
+   Es legt `pipeline-gate` an, installiert das Gate unter `/opt/pipeline` (Eigentümer root), legt Token und Review-Schlüssel unter `/etc/pipeline-gate/projects/autopilot` ab (nur für `pipeline-gate` lesbar), erlaubt dem Benutzer per sudoers nur das Gate und leitet `gh` (`~/.local/bin/gh`) und `git` (`ext::`-Transport in `~/.gitconfig`) des Benutzers durch das Gate. Dazu kommen `/opt/pipeline/update-host` und sein Timer `pipeline-update@autopilot` ([Update der Pipeline](#update-der-pipeline)).
 3. Einmal je Host Claude Code für `pipeline-gate` installieren und anmelden; damit laufen die Reviews. Im Klon aus 2.:
 
    ```
@@ -64,7 +64,7 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
    sudo -u pipeline-gate -H bash -c 'cd && ~/.local/bin/claude'
    ```
 
-   In `claude` dann `/login` ausführen und die Session beenden.
+   In `claude` dann `/login` ausführen und die Session beenden. Den Klon braucht danach niemand mehr: `rm -rf /tmp/agent-pipeline`.
 4. Im Repository unter Settings, Secrets and variables, Actions das Secret `PIPELINE_REVIEW_KEY` mit der Ausgabe von
 
    ```
@@ -74,9 +74,9 @@ Den GitHub-Token hält nur das Gate ([`gate.py`](host/gate.py)), ein Linux-Benut
    anlegen. Ohne Secret zählt `agent-review` ein Review nach seinem Text, mit Warnung.
 5. Der Projekt-Benutzer darf keinen eigenen Token haben (kein `~/.config/gh/hosts.yml`, kein `GH_TOKEN`); `autopilot-start.sh` bricht sonst ab.
 
-Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2 an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates: der Autopilot pausiert mit dem Fehler, im Leerlauf nach drei gescheiterten Abfragen des Pollers.
+Vor Ablauf des Tokens einen neuen anlegen und wie in Schritt 2 (mit frischem Klon) an `install-gate.sh` geben, das ihn ersetzt; danach den alten auf GitHub löschen. Läuft er ab, scheitern alle Aufrufe des Gates: der Autopilot pausiert mit dem Fehler, im Leerlauf nach drei gescheiterten Abfragen des Pollers.
 
-Bei jedem Update installiert `update-host.sh` das Gate des neuen Releases ([Update der Pipeline](#update-der-pipeline)); `autopilot-start.sh` warnt, solange das installierte Gate von dem des Releases abweicht.
+Bei jedem Update installiert `update-host` das Gate des neuen Releases ([Update der Pipeline](#update-der-pipeline)); `autopilot-start.sh` warnt, solange das installierte Gate von dem des Releases abweicht.
 
 ## 3. Projekt (als Projekt-Benutzer)
 
@@ -200,17 +200,13 @@ Dem Bot `status` senden (ohne Schrägstrich); die Antwort nennt Issue, Schritt u
 
 ## Update der Pipeline
 
-1. Dem Bot `update` senden; der Autopilot öffnet den PR auf das neueste Release.
-2. Mit sudo-Rechten im eigenen Klon aus 2.2, nie in einem Verzeichnis des Projekt-Benutzers, dessen Code sonst als root liefe. `<tag>` ist das Release aus dem PR; der Klon braucht mindestens das erste Release mit `update-host.sh`:
+Ohne Zutun: Der Timer `pipeline-update@autopilot` (root, alle 15 Minuten) öffnet den PR auf das neueste stabile Release, kündigt ihn per Telegram an und installiert ihn 12 Stunden später: Approve, Merge über das Gate, Gate und Claude Code für `pipeline-gate` und den Projekt-Benutzer in der Version aus `host/versions.sh`. Er nimmt nur ein veröffentlichtes stabiles Release, dessen Tag auf dem Default-Branch der Pipeline liegt, und einen PR, der nur den Pin auf diesen Tag setzt. Wer das GitHub-Konto der Pipeline übernimmt, bekommt damit nach 12 Stunden root auf dem Host; 2FA ist Pflicht.
 
-   ```
-   cd ~/agent-pipeline && git fetch --tags && git checkout <tag>
-   sudo host/update-host.sh autopilot
-   ```
+- Abbrechen: den Bump-PR schließen; der Timer lässt dieses Release dann aus.
+- Sofort, ohne Wartezeit, als root (zeigt die Release Notes und fragt): `/opt/pipeline/update-host autopilot`. Ohne offenen PR vorher dem Bot `update` senden.
+- Ausschalten: `systemctl disable --now pipeline-update@autopilot.timer`.
 
-   Es zeigt den PR mit den Release Notes und prüft, dass er nur den Pin auf das Release setzt. Nach `y` gibt es das Approve, mergt über das Gate, sobald die Läufe bestanden sind, und installiert das Gate des Releases; der Token bleibt.
-
-Der Autopilot startet danach von selbst auf dem Release neu, im Leerlauf binnen einer Minute, sonst vor dem nächsten Issue. Verlangt das Release eine andere Version von `claude` oder des Telegram-Plugins, meldet `autopilot-start.sh` das per Telegram; dann als Projekt-Benutzer und als `pipeline-gate` wie in 1.3 und 2.3 installieren.
+Der Autopilot startet danach von selbst auf dem Release neu, im Leerlauf binnen einer Minute, sonst vor dem nächsten Issue. Fehler meldet der Timer einmal per Telegram, Details im Journal (`journalctl -u pipeline-update@autopilot`). Verlangt das Release eine andere Version des Telegram-Plugins, meldet `autopilot-start.sh` das per Telegram; dann als Projekt-Benutzer `/plugin install` wie in 6.2.
 
 ## Weiteres Projekt auf demselben Host
 
