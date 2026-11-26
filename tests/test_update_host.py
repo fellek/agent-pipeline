@@ -293,7 +293,8 @@ def test_installs_the_claude_code_version_of_the_release(host):
 
 @pytest.fixture
 def app_remote(tmp_path, host):
-    """o/app as a clone of the pipeline pinned to v1, and a gh stub for bump.sh."""
+    """o/app as a clone of the pipeline pinned to v1, and the gh of the user for bump.sh,
+    in ~/.local/bin as install-gate.sh puts it, not on the PATH of root."""
     work, remote = tmp_path / "app-work", tmp_path / "app.git"
     git(tmp_path, "clone", "-q", PIPELINE_URL, str(work))
     commit(work, PIN, "v1\n")
@@ -301,8 +302,9 @@ def app_remote(tmp_path, host):
     git(work, "push", "-q", "--tags", str(remote), "HEAD")
     with (tmp_path / "gitconfig").open("a") as config:
         config.write(f'[url "{remote}"]\n\tinsteadOf = https://github.com/o/app\n')
+    (host[0].home / ".local/bin").mkdir(parents=True, exist_ok=True)
     write_executable(
-        tmp_path / "stubs" / "gh",
+        host[0].home / ".local/bin/gh",
         f"""echo "$*" >> {tmp_path}/state/gh.log
 case "$1 $2" in
   "release list") echo v2 ;;

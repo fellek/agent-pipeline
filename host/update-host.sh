@@ -67,6 +67,8 @@ pinned_at() {
 open_bump() {
   sudo -u "$user" -H bash -c '
     set -euo pipefail
+    # sudo resets PATH, and only the gh in ~/.local/bin reaches GitHub through the gate.
+    export PATH=$HOME/.local/bin:$PATH
     tmp=$(mktemp -d)
     trap "rm -rf \"$tmp\"" EXIT
     git clone --quiet --recurse-submodules "https://github.com/$1" "$tmp/project"
