@@ -365,8 +365,10 @@ def pull(sha=SHA, state="open", base="main"):
     }
 
 
-def attested(verdict=attestation.APPROVE, sha=SHA, key=KEY, state="COMMENTED"):
-    body = f"Verdict: x\n\n{attestation.line(key, 5, sha, verdict, 's1')}"
+def attested(
+    verdict=attestation.APPROVE, sha=SHA, key=KEY, state="COMMENTED", session="s1"
+):
+    body = f"Verdict: x\n\n{attestation.line(key, 5, sha, verdict, session)}"
     return {"body": body, "commit_id": sha, "state": state}
 
 
@@ -462,8 +464,15 @@ def test_merge_refuses(gate, project, github, change, problem):
 
 
 @pytest.fixture
-def reviewing(gate, project, monkeypatch, tmp_path):
+def prior():
+    """The reviews on GitHub before the run."""
+    return []
+
+
+@pytest.fixture
+def reviewing(gate, project, monkeypatch, tmp_path, prior):
     posted, gh_calls = [], []
+    monkeypatch.setattr(gate, "reviews", lambda p, pr: prior)
     monkeypatch.setattr(gate, "pull_request", lambda p, pr, sha: pull())
     monkeypatch.setattr(gate, "refresh_mirror", lambda p: None)
     monkeypatch.setattr(gate, "write_context", lambda p, pull, sha, folder: None)
@@ -520,6 +529,84 @@ def test_review_posts_an_attested_verdict(gate, project, reviewing, capsys):
     assert capsys.readouterr().out == (
         "STATUS: done\nSUMMARY: Passt.\nVERDICT: approve\nNEXT: CI\n"
     )
+
+
+def test_review_stops_at_the_limit_per_head(gate, project, reviewing, prior):
+    _result, posted, _ = reviewing
+    prior[:] = [
+        attested(session="s1"),
+        attested(attestation.CHANGES_REQUESTED, session="s2"),
+    ]
+    ran = []
+    gate.claude_review = lambda p, tmp, session: ran.append(session)
+    with pytest.raises(gate.Refused, match="--manual"):
+        gate.review(project, 5, SHA)
+    assert ran == []
+    assert posted == []
+
+
+def test_review_runs_below_the_limit(gate, project, reviewing, prior):
+    _result, posted, _ = reviewing
+    prior[:] = [attested(attestation.CHANGES_REQUESTED)]
+    gate.review(project, 5, SHA)
+    assert len(posted) == 1
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        attested(session="manual"),
+        attested(session="carry"),
+        attested(sha="c" * 40),
+        attested(key="wrong"),
+    ],
+    ids=["manual", "carry", "other head", "wrong key"],
+)
+def test_review_ignores_what_is_no_run_on_this_head(
+    gate, project, reviewing, prior, other
+):
+    _result, posted, _ = reviewing
+    prior[:] = [attested(), other, other]
+    gate.review(project, 5, SHA)
+    assert len(posted) == 1
+
+
+def test_review_counts_a_dismissed_run(gate, project, reviewing, prior):
+    prior[:] = [attested(state="DISMISSED"), attested(state="DISMISSED")]
+    with pytest.raises(gate.Refused, match="--manual"):
+        gate.review(project, 5, SHA)
+
+
+def test_review_holds_a_lock_while_it_runs_claude(
+    gate, project, reviewing, monkeypatch
+):
+    held = []
+
+    def claude_review(p, tmp, session):
+        with open(project.work / "review.lock") as other:
+            try:
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held.append(False)
+            except BlockingIOError:
+                held.append(True)
+        return reviewing[0]
+
+    monkeypatch.setattr(gate, "claude_review", claude_review)
+    gate.review(project, 5, SHA)
+    assert held == [True]
+
+
+def test_gate_reviews_counts_only_valid_runs_on_the_head():
+    reviews = [
+        attested(),
+        attested(attestation.CHANGES_REQUESTED, session="s2"),
+        attested(session="manual"),
+        attested(session="carry"),
+        attested(sha="c" * 40),
+        attested(key="wrong"),
+        {"body": "Verdict: approve", "commit_id": SHA, "state": "COMMENTED"},
+    ]
+    assert attestation.gate_reviews(reviews, KEY, 5, SHA) == 2
 
 
 def test_review_with_changes_requested(gate, project, reviewing, capsys):
