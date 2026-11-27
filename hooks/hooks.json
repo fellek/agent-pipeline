@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/deny-default-branch-push.py"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/deny-sandboxed-github-call.py"
           }
         ]
       }
