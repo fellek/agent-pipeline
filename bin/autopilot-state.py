@@ -1341,9 +1341,11 @@ class Autopilot:
             self.park("manuell")
         if self.s["task_id"] is None:
             # No `started` came: no task exists to stop or to wait for.
-            self.s.update(pending=None, waiting_for=None)
+            reason = "abgebrochen" if command == "stop" else "manuell"
+            # check_refs may pause; weiter then parks with this reason.
+            self.s.update(pending=None, waiting_for=None, park=reason)
             self.check_refs()
-            self.park("abgebrochen" if command == "stop" else "manuell")
+            self.park(reason)
         if command == "park":
             self.s["park"] = "manuell"
             self.reply(f"#{n} wird nach dem Schritt geparkt")

@@ -1660,6 +1660,18 @@ def test_restart_with_a_pending_park_checks_the_refs(pilot):
     assert pilot.state["paused"] is True
 
 
+def test_stop_without_a_task_and_moved_refs_parks_on_weiter(pilot):
+    at_step(pilot, "plan-issue", task_id=None, refs=["c" * 40, ""])
+    pilot.result("git", "rev-parse", "HEAD", out="d" * 40)
+    pilot.event("telegram", "1", text="stop #7")
+    assert pilot.state["paused"] is True
+    assert not pilot.ran("leave-branch.py")
+    pilot.result("autopilot-poll.py", "next", out="")
+    pilot.event("telegram", "1", text="weiter")
+    assert pilot.ran("leave-branch.py", "issue-7-fix-the-thing")
+    assert pilot.state["parked"][0]["reason"] == "abgebrochen"
+
+
 def test_setprio_without_need_for_a_plan_skips_plan_issue(pilot):
     at_step(pilot, "setprio", branch=None, pr=None, issue=7)
     actions = finish(pilot, result(plan="skip"))
