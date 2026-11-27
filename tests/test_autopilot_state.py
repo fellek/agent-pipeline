@@ -918,6 +918,19 @@ def test_stop_stops_the_fork_and_parks(pilot):
 
 
 @pytest.mark.parametrize(
+    ("text", "reason"), [("stop #7", "abgebrochen"), ("park #7", "manuell")]
+)
+def test_stop_without_a_task_id_parks_right_away(pilot, text, reason):
+    at_step(pilot, "issue", task_id=None, pending="step")
+    pilot.result("autopilot-poll.py", "next", out="")
+    actions = message(pilot, text)
+    assert all("stop" not in action for action in actions)
+    assert any("background" in action for action in actions)
+    assert pilot.ran("leave-branch.py", "issue-7-fix-the-thing")
+    assert pilot.state["parked"][0]["reason"] == reason
+
+
+@pytest.mark.parametrize(
     ("text", "reason"), [("#7 stop", "abgebrochen"), ("#7 park", "manuell")]
 )
 def test_command_word_after_the_issue_is_no_answer(pilot, text, reason):

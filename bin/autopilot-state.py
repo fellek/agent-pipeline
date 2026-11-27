@@ -1339,6 +1339,11 @@ class Autopilot:
             self.reply(f"#{n} ist gemergt, Merge wird abgeschlossen")
         if self.s["waiting_for"] not in RUNNING:
             self.park("manuell")
+        if self.s["task_id"] is None:
+            # No `started` came: no task exists to stop or to wait for.
+            self.s.update(pending=None, waiting_for=None)
+            self.check_refs()
+            self.park("abgebrochen" if command == "stop" else "manuell")
         if command == "park":
             self.s["park"] = "manuell"
             self.reply(f"#{n} wird nach dem Schritt geparkt")
