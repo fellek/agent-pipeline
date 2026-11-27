@@ -156,6 +156,14 @@ def test_session_refuses_hosts_outside_the_allowlist(run_start):
     assert session_settings(tmux_args)["sandbox"]["network"]["strictAllowlist"] is True
 
 
+def test_session_hides_the_bot_token_from_sandboxed_commands(run_start):
+    result, tmux_args, *_ = run_start()
+    assert result.returncode == 0, result.stderr
+    assert session_settings(tmux_args)["sandbox"]["credentials"]["envVars"] == [
+        {"name": "TELEGRAM_BOT_TOKEN", "mode": "deny"}
+    ]
+
+
 def test_session_denies_a_web_fetch_prompt(run_start):
     result, tmux_args, *_ = run_start()
     assert result.returncode == 0, result.stderr
