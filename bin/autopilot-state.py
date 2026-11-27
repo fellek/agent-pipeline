@@ -64,6 +64,8 @@ REVIEW_LIMIT_ROUNDS = 5
 # Merges of the default branch per issue before it is parked.
 SYNC_LIMIT = 3
 MAX_POLL_FAILURES = 3
+# The answer of a parked issue the maintainer released with the selection label.
+RELEASED = "Der Maintainer hat das Issue wieder freigegeben."
 STATUS_LABELS = ["ready", "in-progress", "in-review", "approved", "question", "parked"]
 STEP_LABELS = {
     "plan-issue": "in-progress",
@@ -533,6 +535,13 @@ class Autopilot:
             self.s["waiting_for"] = "new_issue"
             self.wait()
         issue = found[0]
+        # The maintainer replaced `parked` with the selection label.
+        entry = next(
+            (e for e in self.s["parked"] if e["issue"] == issue["number"]), None
+        )
+        if entry:
+            self.resume(entry, RELEASED)
+            return
         default = self.to_default()
         branch = f"issue-{issue['number']}-{slug(issue['title'])}"
         self.ok("git", "switch", "-c", branch, default)
@@ -597,6 +606,10 @@ class Autopilot:
         if not answered:
             return False
         entry = min(answered, key=lambda e: e["issue"])
+        self.resume(entry, entry["answer"])
+        return True
+
+    def resume(self, entry, answer):
         pr = entry["pr"]
         if entry["branch"] is None:
             self.to_default()
@@ -614,8 +627,7 @@ class Autopilot:
         self.s["fork_runs"] = 0
         self.s.update(pr=pr, waiting_for=None, question=None)
         self.log("resume")
-        self.run_step(entry["answer"])
-        return True
+        self.run_step(answer)
 
     def issue_pr(self, issue):
         return json.loads(self.ok("issue-pr.py", str(issue)))
