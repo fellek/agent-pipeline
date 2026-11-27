@@ -74,7 +74,9 @@ validate=$(claude plugin validate "${host%/host}" 2>&1) \
 mkdir -p .pipeline
 # A fetch or a sandboxed command to a host outside the allow rules is refused,
 # not left waiting on a prompt; a repository's settings cannot set strictAllowlist.
-session_settings='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-statusline.py","refreshInterval":60},"sandbox":{"network":{"strictAllowlist":true}},"hooks":{"PermissionRequest":[{"matcher":"WebFetch","hooks":[{"type":"command","command":"'"$host"'/deny-fetch-prompt.sh"}]}]}}'
+# The bot token variable is removed from sandboxed commands, for example a check;
+# the scripts in excludedCommands run outside the sandbox and keep it.
+session_settings='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-statusline.py","refreshInterval":60},"sandbox":{"network":{"strictAllowlist":true},"credentials":{"envVars":[{"name":"TELEGRAM_BOT_TOKEN","mode":"deny"}]}},"hooks":{"PermissionRequest":[{"matcher":"WebFetch","hooks":[{"type":"command","command":"'"$host"'/deny-fetch-prompt.sh"}]}]}}'
 # CLAUDE_CODE_EFFORT_LEVEL would override the effort set per skill.
 # The retry watchdog waits out session and weekly limits instead of opening the limit menu.
 # Without the auto updater the session keeps the version checked above.
