@@ -4,8 +4,9 @@ from conftest import ROOT, frontmatter
 AGENTS = sorted((ROOT / "agents").glob("*.md"))
 
 
-def test_implementer_cannot_reach_the_web():
-    tools = frontmatter(ROOT / "agents" / "implementer.md")["tools"].split(", ")
+@pytest.mark.parametrize("path", AGENTS, ids=lambda p: p.name)
+def test_agents_cannot_reach_the_web(path):
+    tools = frontmatter(path)["tools"].split(", ")
     assert not {"WebFetch", "WebSearch"} & set(tools)
 
 
