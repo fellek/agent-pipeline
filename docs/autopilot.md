@@ -16,6 +16,7 @@ Der Bot beantwortet `/help`, `/start` und `/status` selbst (Plugin), deshalb ohn
 - `park #<n>`: parkt das aktuelle Issue, bei laufendem Schritt nach dessen Ende
 - `stop #<n>`: bricht den laufenden Schritt ab und parkt das Issue
 - `#<n> park` und `#<n> stop` gelten wie `park #<n>` und `stop #<n>`, nicht als Antwort
+- Ein geparktes Issue wieder aufnehmen: mit einem Kommentar oder `#<n> ...` beantworten oder `parked` durch das Auswahl-Label ersetzen; Letzteres setzt es am nächsten Issue-Wechsel ohne Antwort auf seinem Branch und Schritt fort
 - `cleanup`: sichert in der Pause ungesicherte Änderungen als Commit auf dem lokalen Branch `cleanup/<n>-<Zeit>`, ohne Push
 - `prune`: ohne laufenden Schritt; listet lokale `issue-*`-Branches, deren Spitze der Head eines gemergten PRs ist, außer dem aktuellen; `prune ja` löscht danach die gelisteten, die das noch sind
 - `/verbose`: schaltet Meldungen zu jedem Schritt an oder aus

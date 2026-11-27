@@ -348,6 +348,7 @@ def test_dirty_tree_after_a_reading_step_is_a_failure(pilot):
 )
 def test_review_rounds(pilot, rounds, message, parked):
     at_step(pilot, "review-issue", review_rounds=rounds)
+    pilot.result("autopilot-poll.py", "next", out="")
     finish(pilot, out=result(verdict="changes requested", summary="open"))
     assert pilot.state["review_rounds"] == (0 if parked else rounds + 1)
     if message:
@@ -495,6 +496,34 @@ def test_parked_issue_with_an_answer_resumes_first(pilot):
     assert pilot.state["question"] is None
     assert pilot.state["attempts_per_step"] == {"plan-issue": 2}
     assert actions[0] == {"skill": "pipeline:plan-issue", "args": '4 "take a" ""'}
+
+
+def released(pilot, **fields):
+    pilot.state = {"parked": [parked(waiting_for="answer", **fields)]}
+    issue = {"number": 4, "title": "x", "labels": ["ready"]}
+    pilot.result("autopilot-poll.py", "next", out=json.dumps(issue))
+    return pilot.event("start", "")
+
+
+def test_parked_issue_with_the_selection_label_resumes_on_its_branch(pilot):
+    actions = released(pilot, fork_runs=9)
+    assert pilot.ran("git", "switch", "issue-4-x")
+    assert not pilot.ran("git", "switch", "-c")
+    assert pilot.state["parked"] == []
+    assert pilot.state["issue"] == 4
+    assert pilot.state["step"] == "plan-issue"
+    assert pilot.state["fork_runs"] == 1
+    assert pilot.state["attempts_per_step"] == {"plan-issue": 2}
+    assert actions[0] == {
+        "skill": "pipeline:plan-issue",
+        "args": '4 "Der Maintainer hat das Issue wieder freigegeben." ""',
+    }
+
+
+def test_released_parked_issue_with_a_pr_pulls_its_branch(pilot):
+    released(pilot, pr=6)
+    assert pilot.ran("git", "pull", "--ff-only", "origin", "issue-4-x")
+    assert pilot.state["pr"] == 6
 
 
 def test_waiting_parked_entries_are_targets_of_the_poller(pilot):
@@ -852,6 +881,7 @@ def test_weiter_while_a_step_runs_only_clears_the_pause(pilot):
 
 def test_weiter_with_a_pending_park_parks(pilot):
     at_step(pilot, "issue", paused=True, waiting_for="resume", park="manuell")
+    pilot.result("autopilot-poll.py", "next", out="")
     message(pilot, "weiter")
     assert pilot.state["parked"][0]["reason"] == "manuell"
 
