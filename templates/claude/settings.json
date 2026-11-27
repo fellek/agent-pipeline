@@ -39,7 +39,11 @@
       "Bash(telegram-send.py*)",
       "Bash(watch-ci.py*)",
       "mcp__plugin_telegram_telegram",
-      "Read(~/.claude/channels/telegram/access.json)"
+      "Read(~/.claude/channels/telegram/access.json)",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:developer.mozilla.org)"
     ],
     "deny": [
       "Bash(git push *--force*)",

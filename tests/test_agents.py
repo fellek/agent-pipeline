@@ -5,9 +5,10 @@ AGENTS = sorted((ROOT / "agents").glob("*.md"))
 
 
 @pytest.mark.parametrize("path", AGENTS, ids=lambda p: p.name)
-def test_agents_cannot_reach_the_web(path):
+def test_agents_fetch_pages_but_do_not_search_the_web(path):
     tools = frontmatter(path)["tools"].split(", ")
-    assert not {"WebFetch", "WebSearch"} & set(tools)
+    assert "WebFetch" in tools
+    assert "WebSearch" not in tools
 
 
 @pytest.mark.parametrize("path", AGENTS, ids=lambda p: p.name)

@@ -45,7 +45,13 @@
       "Bash(uv run pytest*)",
       "Bash(uv run ruff *)",
       "Bash(claude plugin validate*)",
-      "Bash(bin/check-project.py*)"
+      "Bash(bin/check-project.py*)",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:developer.mozilla.org)",
+      "WebFetch(domain:docs.astral.sh)",
+      "WebFetch(domain:docs.pytest.org)"
     ],
     "deny": [
       "Bash(git push *--force*)",

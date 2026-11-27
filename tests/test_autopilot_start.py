@@ -146,6 +146,36 @@ def test_registers_status_line_for_session_only(run_start):
     assert status_line["refreshInterval"] == 60
 
 
+def session_settings(tmux_args):
+    return json.loads(tmux_args[tmux_args.index("--settings") + 1])
+
+
+def test_session_refuses_hosts_outside_the_allowlist(run_start):
+    result, tmux_args, *_ = run_start()
+    assert result.returncode == 0, result.stderr
+    assert session_settings(tmux_args)["sandbox"]["network"]["strictAllowlist"] is True
+
+
+def test_session_denies_a_web_fetch_prompt(run_start):
+    result, tmux_args, *_ = run_start()
+    assert result.returncode == 0, result.stderr
+    [entry] = session_settings(tmux_args)["hooks"]["PermissionRequest"]
+    assert entry["matcher"] == "WebFetch"
+    [hook] = entry["hooks"]
+    assert hook["command"].endswith("/plugin/host/deny-fetch-prompt.sh")
+    hook_result = subprocess.run(
+        [str(ROOT / "host" / "deny-fetch-prompt.sh")],
+        input="{}",
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    output = json.loads(hook_result.stdout)["hookSpecificOutput"]
+    assert output["hookEventName"] == "PermissionRequest"
+    assert output["decision"]["behavior"] == "deny"
+    assert output["decision"]["message"]
+
+
 def test_starts_session_named_after_repository_in_project(run_start, tmp_path):
     result, tmux_args, *_ = run_start()
     assert result.returncode == 0, result.stderr
