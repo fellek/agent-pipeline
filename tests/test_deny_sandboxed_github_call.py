@@ -32,6 +32,11 @@ def hook():
         "gh pr view 1 > .pipeline/pr.json",
         "gate review 1 abc 2>&1",
         "echo x | gh issue comment 1 --body-file -",
+        "sudo -u user gh pr view 1",
+        "env -C /repo git push origin issue-1-x",
+        "timeout -s KILL 60 git push origin issue-1-x",
+        "if true; then git push origin issue-1-x; fi",
+        "cat > .pipeline/b.md <<'EOF'\nx\nEOF\ngit push origin issue-1-x",
     ],
 )
 def test_github_call_in_sandbox_is_blocked(hook, command):
@@ -53,6 +58,9 @@ def test_github_call_in_sandbox_is_blocked(hook, command):
         "uv run pytest | tail -5",
         "git log --oneline | grep push",
         "git push 'unclosed",
+        "cat > .pipeline/body.md <<'EOF'\ngh pr create failed\nEOF",
+        "cat > .pipeline/body.md <<'EOF'\nThe push (git push origin x) failed\nEOF",
+        "cat > .pipeline/body.md <<-EOF\n\tsee; gh pr view\n\tEOF",
     ],
 )
 def test_other_calls_pass(hook, command):
