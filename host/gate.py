@@ -792,7 +792,6 @@ def _review(project, pr, sha):
         )
     refresh_mirror(project)
     session = str(uuid.uuid4())
-    project.work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=project.work) as name:
         tmp = Path(name)
         (tmp / "context").mkdir()
