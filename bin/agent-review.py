@@ -22,7 +22,8 @@ agent-review-sync.yml starts.
 
 `audit` checks a commit pushed to the default branch: it must be the merge of a
 pull request whose head has an attested approve and passed runs. Otherwise it
-opens a followup issue and exits 1. Without the key it only warns.
+opens a followup issue and exits 1. Without the key it only warns. It waits up to
+about 4.5 minutes for GitHub to link the merge to its pull request.
 
 Usage:
   agent-review.py <pr> <head_sha>
@@ -46,6 +47,8 @@ INTERVAL_SECONDS = 3
 AWAIT_ATTEMPTS = 20
 AWAIT_INTERVAL_SECONDS = 30
 DEADLINE_SECONDS = 45 * 60
+PULL_ATTEMPTS = 10
+PULL_INTERVAL_SECONDS = 30
 
 
 def gh_json(*args):
@@ -173,10 +176,17 @@ def sync(pr, head_sha, may_rerun=True):
 
 
 def merged_pull_request(sha):
-    pulls = gh_json("api", f"repos/{{owner}}/{{repo}}/commits/{sha}/pulls")
-    return next(
-        (p for p in pulls if p["merged_at"] and p["merge_commit_sha"] == sha), None
-    )
+    # GitHub links a commit to its pull request only after a short delay.
+    for attempt in range(PULL_ATTEMPTS):
+        if attempt:
+            time.sleep(PULL_INTERVAL_SECONDS)
+        pulls = gh_json("api", f"repos/{{owner}}/{{repo}}/commits/{sha}/pulls")
+        pull = next(
+            (p for p in pulls if p["merged_at"] and p["merge_commit_sha"] == sha), None
+        )
+        if pull:
+            return pull
+    return None
 
 
 def audit_problems(sha, key):

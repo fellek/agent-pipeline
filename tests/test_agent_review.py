@@ -1,5 +1,6 @@
 import json
 import subprocess
+import time
 
 import attestation
 import pytest
@@ -310,7 +311,12 @@ def test_main_reads_key_from_environment(monkeypatch, gate):
 
 
 def fake_audit_gh(monkeypatch, pulls, reviews, runs):
+    """Fakes gh for `audit`: `pulls` are the replies of the pulls endpoint in order,
+    the last one repeats."""
     calls = []
+    pulls = iter(pulls)
+    reply = []
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
 
     def run(args, **kwargs):
         calls.append(args)
@@ -319,7 +325,9 @@ def fake_audit_gh(monkeypatch, pulls, reviews, runs):
         if args[1] == "run":
             return subprocess.CompletedProcess(args, 0, stdout=json.dumps(runs))
         if args[-1].endswith("/pulls"):
-            return subprocess.CompletedProcess(args, 0, stdout=json.dumps(pulls))
+            nonlocal reply
+            reply = next(pulls, reply)
+            return subprocess.CompletedProcess(args, 0, stdout=json.dumps(reply))
         return subprocess.CompletedProcess(args, 0, stdout=json.dumps([reviews]))
 
     monkeypatch.setattr(subprocess, "run", run)
@@ -338,7 +346,7 @@ GREEN = [{"name": "CI", "status": "completed", "conclusion": "success"}]
 
 def test_audit_passes_merge_of_attested_pull_request(monkeypatch, gate):
     monkeypatch.setenv("PIPELINE_REVIEW_KEY", KEY)
-    calls = fake_audit_gh(monkeypatch, [MERGED], [attested()], GREEN)
+    calls = fake_audit_gh(monkeypatch, [[MERGED]], [attested()], GREEN)
     gate.main(["audit", MERGE])
     assert not any(args[1:3] == ["issue", "create"] for args in calls)
 
@@ -346,11 +354,11 @@ def test_audit_passes_merge_of_attested_pull_request(monkeypatch, gate):
 @pytest.mark.parametrize(
     ("pulls", "reviews", "runs", "problem"),
     [
-        ([], [], GREEN, "no merged pull request"),
-        ([{**MERGED, "merge_commit_sha": "x"}], [], GREEN, "no merged pull request"),
-        ([MERGED], [review(commit_id=SHA)], GREEN, "#49 has no attested approve"),
+        ([[]], [], GREEN, "no merged pull request"),
+        ([[{**MERGED, "merge_commit_sha": "x"}]], [], GREEN, "no merged pull request"),
+        ([[MERGED]], [review(commit_id=SHA)], GREEN, "#49 has no attested approve"),
         (
-            [MERGED],
+            [[MERGED]],
             [attested()],
             [{"name": "CI", "status": "completed", "conclusion": "failure"}],
             "runs not passed: CI",
@@ -370,9 +378,29 @@ def test_audit_opens_issue_for_merge_without_gates(
     assert problem in created[created.index("--body") + 1]
 
 
+def pull_calls(calls):
+    return [args for args in calls if args[-1].endswith("/pulls")]
+
+
+def test_audit_asks_again_until_github_links_the_pull_request(monkeypatch, gate):
+    monkeypatch.setenv("PIPELINE_REVIEW_KEY", KEY)
+    calls = fake_audit_gh(monkeypatch, [[], [MERGED]], [attested()], GREEN)
+    gate.main(["audit", MERGE])
+    assert len(pull_calls(calls)) == 2
+    assert not any(args[1:3] == ["issue", "create"] for args in calls)
+
+
+def test_audit_gives_up_after_the_pull_attempts(monkeypatch, gate):
+    monkeypatch.setenv("PIPELINE_REVIEW_KEY", KEY)
+    calls = fake_audit_gh(monkeypatch, [[]], [], GREEN)
+    with pytest.raises(SystemExit):
+        gate.main(["audit", MERGE])
+    assert len(pull_calls(calls)) == gate.PULL_ATTEMPTS
+
+
 def test_audit_without_key_only_warns(monkeypatch, gate, capsys):
     monkeypatch.delenv("PIPELINE_REVIEW_KEY", raising=False)
-    calls = fake_audit_gh(monkeypatch, [], [], [])
+    calls = fake_audit_gh(monkeypatch, [[]], [], [])
     gate.main(["audit", MERGE])
     assert calls == []
     assert "PIPELINE_REVIEW_KEY is not set" in capsys.readouterr().err
