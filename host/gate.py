@@ -702,6 +702,9 @@ def export(project, rev, folder):
         capture_output=True,
     ).stdout
     subprocess.run(["tar", "-x", "-C", str(folder)], input=archive, check=True)
+    # A symlink of the pull request could point out of the export, for example
+    # to the mirror of another project.
+    subprocess.run(["find", str(folder), "-type", "l", "-delete"], check=True)
 
 
 def claude_review(project, tmp, session):
