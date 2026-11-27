@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Plans or reviews the work on a GitHub issue without changing files.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, WebFetch
 disallowedTools: Edit, Write, NotebookEdit
 model: opus
 ---

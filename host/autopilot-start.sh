@@ -72,7 +72,9 @@ validate=$(claude plugin validate "${host%/host}" 2>&1) \
 [ "$(loginctl show-user "$(id -un)" -p Linger --value)" = yes ] || fail "linger is not enabled"
 
 mkdir -p .pipeline
-status_line='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-statusline.py","refreshInterval":60}}'
+# A fetch or a sandboxed command to a host outside the allow rules is refused,
+# not left waiting on a prompt; a repository's settings cannot set strictAllowlist.
+session_settings='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-statusline.py","refreshInterval":60},"sandbox":{"network":{"strictAllowlist":true}},"hooks":{"PermissionRequest":[{"matcher":"WebFetch","hooks":[{"type":"command","command":"'"$host"'/deny-fetch-prompt.sh"}]}]}}'
 # CLAUDE_CODE_EFFORT_LEVEL would override the effort set per skill.
 # The retry watchdog waits out session and weekly limits instead of opening the limit menu.
 # Without the auto updater the session keeps the version checked above.
@@ -81,4 +83,4 @@ status_line='{"statusLine":{"type":"command","command":"'"$host"'/autopilot-stat
 tmux new-session -d -s "$session" -c "$PWD" env -u CLAUDE_CODE_EFFORT_LEVEL CLAUDE_CODE_RETRY_WATCHDOG=1 \
   DISABLE_AUTOUPDATER=1 \
   BASH_DEFAULT_TIMEOUT_MS=600000 BASH_MAX_TIMEOUT_MS=3600000 \
-  claude --settings "$status_line" --model sonnet --effort medium --channels "$channel" -- "/pipeline:autopilot $label"
+  claude --settings "$session_settings" --model sonnet --effort medium --channels "$channel" -- "/pipeline:autopilot $label"

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 from fnmatch import fnmatch
@@ -62,6 +63,34 @@ def write_checks(app, commands, allow=()):
 def test_accepts_templates(app):
     result = check(app)
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
+def web_fetch_rules(settings):
+    return [r for r in settings["permissions"]["allow"] if r.startswith("WebFetch")]
+
+
+def test_template_allows_web_fetch_only_for_exact_hosts(app):
+    rules = web_fetch_rules(
+        json.loads((TEMPLATES / "claude" / "settings.json").read_text())
+    )
+    assert rules
+    assert all(re.fullmatch(r"WebFetch\(domain:[a-z0-9.-]+\)", r) for r in rules)
+
+
+def test_pipeline_settings_allow_the_hosts_of_the_template():
+    template = json.loads((TEMPLATES / "claude" / "settings.json").read_text())
+    own = json.loads((ROOT / ".claude" / "settings.json").read_text())
+    assert set(web_fetch_rules(template)) <= set(web_fetch_rules(own))
+
+
+def test_accepts_extra_web_fetch_rules_and_domains(app):
+    settings = app / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    data["permissions"]["allow"].append("WebFetch(domain:docs.example.org)")
+    data["sandbox"]["network"]["allowedDomains"].append("registry.example.org")
+    settings.write_text(json.dumps(data))
+    result = check(app)
+    assert (result.returncode, result.stderr) == (0, "")
 
 
 def test_accepts_extra_deny_rules(app):

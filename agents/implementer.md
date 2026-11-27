@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: Implements a GitHub issue or addresses the review comments on its pull request.
-tools: Read, Edit, Write, Glob, Grep, Bash, Agent
+tools: Read, Edit, Write, Glob, Grep, Bash, Agent, WebFetch
 model: sonnet
 ---
 
