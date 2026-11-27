@@ -15,7 +15,8 @@ Commands:
   gh <args>                             gh with the token, allowed commands only
   check                                 print the repository the token reaches
   review <pr> <sha>                     review by a fresh `claude -p`, posted with
-                                        an attestation; prints the result block
+                                        an attestation; prints the result block;
+                                        at most REVIEW_LIMIT per head
   review --manual <user> <pr> <sha> approve|changes-requested
                                         only for root: the maintainer's verdict
   carry <pr> <sha>                      approve sha without a review if it only
@@ -50,6 +51,8 @@ REVIEW_PROMPT = HERE / "gate-review.md"
 WORKFLOW_RULES = HERE / "workflow.md"
 PUSHABLE = re.compile(r"refs/heads/(issue|bump-pipeline|bump-plugin)-[^/]+")
 ZERO = "0" * 40
+# Runs of `claude -p` per head; more only by the manual verdict of the maintainer.
+REVIEW_LIMIT = 2
 # Only these reach the review: content of others could steer it (prompt injection).
 TRUSTED = trust.TRUSTED
 
@@ -769,7 +772,24 @@ def claude_review(project, tmp, session):
 
 
 def review(project, pr, sha):
+    project.work.mkdir(parents=True, exist_ok=True)
+    # Counting, reviewing and posting in one lock, or parallel calls roll the dice
+    # past the limit.
+    with open(project.work / "review.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _review(project, pr, sha)
+
+
+def _review(project, pr, sha):
     pull = pull_request(project, pr, sha)
+    if (
+        attestation.gate_reviews(reviews(project, pr), project.key, pr, sha)
+        >= REVIEW_LIMIT
+    ):
+        raise Refused(
+            f"{sha} has {REVIEW_LIMIT} reviews already; "
+            f"the maintainer decides with `gate review --manual` as root"
+        )
     refresh_mirror(project)
     session = str(uuid.uuid4())
     project.work.mkdir(parents=True, exist_ok=True)

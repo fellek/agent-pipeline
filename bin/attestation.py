@@ -22,6 +22,8 @@ LINE = re.compile(
 )
 # Their runs follow the attestation, so they cannot gate it.
 REVIEW_WORKFLOWS = {"agent-review", "agent-review-sync"}
+# Sessions of the verdicts the gate posts without a `claude -p` run.
+NO_RUN = {"manual", "carry"}
 PASSED = {"success", "skipped", "neutral"}
 
 
@@ -37,8 +39,8 @@ def line(key, pr, sha, verdict, session):
     )
 
 
-def verdict(body, key, pr, sha):
-    """The verdict of a valid attestation in the body for pr and sha, else None."""
+def attested(body, key, pr, sha):
+    """(verdict, session) of a valid attestation in the body for pr and sha, else None."""
     for match in LINE.finditer(body or ""):
         found_pr, found_sha, found, session, found_mac = match.groups()
         if (
@@ -46,8 +48,28 @@ def verdict(body, key, pr, sha):
             and found_sha == sha
             and hmac.compare_digest(found_mac, mac(key, pr, sha, found, session))
         ):
-            return found
+            return found, session
     return None
+
+
+def verdict(body, key, pr, sha):
+    """The verdict of a valid attestation in the body for pr and sha, else None."""
+    found = attested(body, key, pr, sha)
+    return found[0] if found else None
+
+
+def gate_reviews(reviews, key, pr, sha):
+    """Number of reviews of `claude -p` runs of the gate on sha, whatever their verdict.
+
+    The manual verdict of the maintainer and a carried approve are no run.
+    """
+    return sum(
+        1
+        for review in reviews
+        if review["commit_id"] == sha
+        and (found := attested(review["body"], key, pr, sha))
+        and found[1] not in NO_RUN
+    )
 
 
 def latest_verdict(reviews, key, pr, sha):
